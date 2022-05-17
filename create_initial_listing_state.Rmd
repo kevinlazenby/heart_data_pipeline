@@ -38,66 +38,69 @@ here::i_am("create_initial_listing_state.Rmd")
 # 1. Import data sets from SRTR
 
 ```{r}
-cand_thor <- read_sas(here("pubsaf2103", "cand_thor.sas7bdat"), NULL) %>%  
+
+curr_data_release <- "pubsaf2103"
+
+cand_thor <- read_sas(here(curr_data_release, "cand_thor.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 cand_thor_selected_vars <- read_csv(here("cand_thor_selected_vars.csv"))
 cand_thor_selected_vars <- pull(cand_thor_selected_vars)
 
-stat_just_hr1a <- read_sas(here("pubsaf2103", "statjust_hr1a.sas7bdat"), NULL) %>%  
+stat_just_hr1a <- read_sas(here(curr_data_release, "statjust_hr1a.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
-stat_just_hr1b <- read_sas(here("pubsaf2103", "statjust_hr1b.sas7bdat"), NULL) %>%  
+stat_just_hr1b <- read_sas(here(curr_data_release, "statjust_hr1b.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
-just_form_hr <- read_sas(here("pubsaf2103", "JustFormHR.sas7bdat"), NULL) %>%  
+just_form_hr <- read_sas(here(curr_data_release, "JustFormHR.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 just_form_hr_stat1 <- 
-  read_sas(here("pubsaf2103", "JustFormHRStat1.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "JustFormHRStat1.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 just_form_hr_stat2 <- 
-  read_sas(here("pubsaf2103", "JustFormHRStat2.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "JustFormHRStat2.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 just_form_hr_stat3 <- 
-  read_sas(here("pubsaf2103", "JustFormHRStat3.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "JustFormHRStat3.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 just_form_hr_stat4 <- 
-  read_sas(here("pubsaf2103", "JustFormHRStat4.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "JustFormHRStat4.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 risk_strat_data_hr <- 
-  read_sas(here("pubsaf2103", "RiskStratDataHR.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "RiskStratDataHR.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 just_form_hr_data_link <- 
-  read_sas(here("pubsaf2103", "JustFormHRDataLink.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "JustFormHRDataLink.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 column_descriptions <- 
-  read_sas(here("pubsaf2103", "ColumnDescriptions.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "ColumnDescriptions.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 table_descriptions <- 
-  read_sas(here("pubsaf2103", "TableDescriptions.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "TableDescriptions.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 stathist_thor <- 
-  read_sas(here("pubsaf2103", "stathist_thor.sas7bdat"), NULL) %>%  
+  read_sas(here(curr_data_release, "stathist_thor.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
 status_just_episode <- 
-  read_sas(here("pubsaf2103", "StatusJustEpisode.sas7bdat"), NULL) %>%
+  read_sas(here(curr_data_release, "StatusJustEpisode.sas7bdat"), NULL) %>%
   zap_formats() %>% zap_labels()
 
 thor_support_device <- 
-  read_sas(here("pubsaf2103", "ThorSupportDevice.sas7bdat"), NULL) %>% 
+  read_sas(here(curr_data_release, "ThorSupportDevice.sas7bdat"), NULL) %>% 
   zap_formats() %>% zap_labels()
 
-tx_hr <- read_sas(here("pubsaf2103", "tx_hr.sas7bdat"), NULL) %>%  
+tx_hr <- read_sas(here(curr_data_release, "tx_hr.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 ```
 
