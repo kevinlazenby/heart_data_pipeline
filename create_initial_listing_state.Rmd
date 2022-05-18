@@ -44,8 +44,22 @@ curr_data_release <- "pubsaf2103"
 cand_thor <- read_sas(here(curr_data_release, "cand_thor.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
 
-cand_thor_selected_vars <- read_csv(here("cand_thor_selected_vars.csv"))
-cand_thor_selected_vars <- pull(cand_thor_selected_vars)
+cand_thor_selected_vars <- c("PX_ID", "WL_ORG", "CAN_GENDER", "CAN_ABO", "CAN_RACE",
+                             "PERS_SSA_DEATH_DT", "PERS_OPTN_DEATH_DT", 
+                             "PERS_RESTRICT_DEATH_DT", "CAN_LISTING_DT", "CAN_REM_DT",
+                             "CAN_REM_CD", "CAN_DGN", "CAN_ECMO", "CAN_VENTILATOR",
+                             "CAN_IABP", "CAN_IV_INOTROP", "CAN_VAD_TY", "CAN_VAD1",
+                             "CAN_PRIMARY_PAY", "CAN_HGT_CM", "CAN_WGT_KG", "CAN_BMI",
+                             "CAN_DIAB_TY", "CAN_DIAL", "CAN_DRUG_TREAT_HYPERTEN",
+                             "CAN_CEREB_VASC", "CAN_PERIPH_VASC",
+                             "CAN_MOST_RECENT_CREAT", "CAN_TOT_ALBUMIN", 
+                             "CAN_ANTI_ARRYTHM", "CAN_IMPLANT_DEFIB", 
+                             "CAN_PULM_ART_MEAN", "CAN_PCW_MEAN", 
+                             "CAN_CARDIAC_OUTPUT", "CAN_HIST_CIGARETTE",
+                             "CAN_OTHER_TOBACCO_USE", "CAN_MALIG",
+                             "CAN_AGE_IN_MONTHS_AT_LISTING", "CAN_LAST_ACT_STAT_DT",
+                             "CAN_INIT_STAT", "CAN_ANGINA", "CAN_ANGINA_CAD",
+                             "CAN_PEPTIC_ULCER", "CAN_PULM_EMBOL", "CAN_EXERCISE_O2")
 
 stat_just_hr1a <- read_sas(here(curr_data_release, "statjust_hr1a.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
