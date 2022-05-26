@@ -37,29 +37,12 @@ here::i_am("create_post_policy_dataset.Rmd")
 
 # 1. Import data sets from SRTR
 
-```{r}
+```{r load data}
 
 curr_data_release <- "pubsaf2103"
 
 cand_thor <- read_sas(here(curr_data_release, "cand_thor.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
-
-cand_thor_selected_vars <- c("PX_ID", "WL_ORG", "CAN_GENDER", "CAN_ABO", "CAN_RACE",
-                             "PERS_SSA_DEATH_DT", "PERS_OPTN_DEATH_DT", 
-                             "PERS_RESTRICT_DEATH_DT", "CAN_LISTING_DT", "CAN_REM_DT",
-                             "CAN_REM_CD", "CAN_DGN", "CAN_ECMO", "CAN_VENTILATOR",
-                             "CAN_IABP", "CAN_IV_INOTROP", "CAN_VAD_TY", "CAN_VAD1",
-                             "CAN_PRIMARY_PAY", "CAN_HGT_CM", "CAN_WGT_KG", "CAN_BMI",
-                             "CAN_DIAB_TY", "CAN_DIAL", "CAN_DRUG_TREAT_HYPERTEN",
-                             "CAN_CEREB_VASC", "CAN_PERIPH_VASC",
-                             "CAN_MOST_RECENT_CREAT", "CAN_TOT_ALBUMIN", 
-                             "CAN_ANTI_ARRYTHM", "CAN_IMPLANT_DEFIB", 
-                             "CAN_PULM_ART_MEAN", "CAN_PCW_MEAN", 
-                             "CAN_CARDIAC_OUTPUT", "CAN_HIST_CIGARETTE",
-                             "CAN_OTHER_TOBACCO_USE", "CAN_MALIG",
-                             "CAN_AGE_IN_MONTHS_AT_LISTING", "CAN_LAST_ACT_STAT_DT",
-                             "CAN_INIT_STAT", "CAN_ANGINA", "CAN_ANGINA_CAD",
-                             "CAN_PEPTIC_ULCER", "CAN_PULM_EMBOL", "CAN_EXERCISE_O2")
 
 stat_just_hr1a <- read_sas(here(curr_data_release, "statjust_hr1a.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
@@ -151,7 +134,7 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 #     b. Filter in adult, heart-only transplant candidates
 #     c. Remove variables which are missing or irrelevant
 
-```{r}
+```{r apply exclusion criteria}
 policy_switch_date <- mdy("10/18/2018")
 
 multi_organ_recipients <- tx_hr %>% 
@@ -159,7 +142,7 @@ multi_organ_recipients <- tx_hr %>%
 	select(PX_ID, REC_TX_TY)
 
 # filter candidates based on inclusion/exclusion criteria to create initial listing state
-init_list_post <- cand_thor %>% 
+full_list_post <- cand_thor %>% 
   filter(CAN_LISTING_DT >= policy_switch_date) %>% 
   filter(WL_ORG == "HR") %>% 
   filter(CAN_INIT_STAT != 2150) %>% 
@@ -169,78 +152,228 @@ init_list_post <- cand_thor %>%
 # risk stratification data from post-policy era
 risk_strat_post <- risk_strat_data_hr %>% 
   mutate(PX_ID = px_id) %>% select(-px_id) %>%
-  filter(PX_ID %in% init_list_post$PX_ID)
+  filter(PX_ID %in% full_list_post$PX_ID)
 
 # status history file from post-policy era
-stathist_post <- stathist_thor %>% filter(PX_ID %in% init_list_post$PX_ID)
+stathist_post <- stathist_thor %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # justification forms from post-policy era
-just_form_post <- just_form_hr %>% filter(PX_ID %in% init_list_post$PX_ID)
+just_form_post <- just_form_hr %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # data linking dataframe from post-policy era
-data_link_post <- just_form_hr_data_link %>% filter(PX_ID %in% init_list_post$PX_ID)
+data_link_post <- just_form_hr_data_link %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # Status 1 justification forms from post-policy era
-just_stat1_post <- just_form_hr_stat1 %>% filter(PX_ID %in% init_list_post$PX_ID)
+just_stat1_post <- just_form_hr_stat1 %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # Status 2 justification forms from post-policy era
-just_stat2_post <- just_form_hr_stat2 %>% filter(PX_ID %in% init_list_post$PX_ID)
+just_stat2_post <- just_form_hr_stat2 %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # Status 3 justification forms from post-policy era
-just_stat3_post <- just_form_hr_stat3 %>% filter(PX_ID %in% init_list_post$PX_ID)
+just_stat3_post <- just_form_hr_stat3 %>% filter(PX_ID %in% full_list_post$PX_ID)
 
 # Status 4 justification forms from post-policy era
-just_stat4_post <- just_form_hr_stat4 %>% filter(PX_ID %in% init_list_post$PX_ID)
+just_stat4_post <- just_form_hr_stat4 %>% filter(PX_ID %in% full_list_post$PX_ID)
 
-# this line selects the 46 variables in cand_thor currently used in analysis
-init_list_post <- init_list_post %>% select(all_of(cand_thor_selected_vars))
+# this block selects the 46 variables in cand_thor currently used in analysis
+# CAN_DRUG_TREAT_HYPERTEN, completely missing post-policy
+# CAN_PERIPH_VASC, completely missing post-policy
+# CAN_ANTI_ARRYTHM, completely missing post-policy
+# CAN_OTHER_TOBACCO_USE, completely missing post-policy
+# CAN_PULM_EMBOL, completely missing post-policy
+full_list_post <- full_list_post %>% 
+  select(
+    PX_ID,
+    WL_ORG,
+    CAN_GENDER,
+    CAN_ABO,
+    CAN_RACE,
+    PERS_SSA_DEATH_DT,
+    PERS_OPTN_DEATH_DT,
+    PERS_RESTRICT_DEATH_DT,
+    CAN_LISTING_DT,
+    CAN_REM_DT,
+    CAN_REM_CD,
+    CAN_DGN,
+    CAN_ECMO,
+    CAN_VENTILATOR,
+    CAN_IABP,
+    CAN_IV_INOTROP,
+    CAN_VAD_TY,
+    CAN_VAD1,
+    CAN_PRIMARY_PAY,
+    CAN_HGT_CM,
+    CAN_WGT_KG,
+    CAN_BMI,
+    CAN_DIAB_TY,
+    CAN_DIAL,
+    CAN_CEREB_VASC,
+    CAN_MOST_RECENT_CREAT,
+    CAN_TOT_ALBUMIN,
+    CAN_IMPLANT_DEFIB,
+    CAN_PULM_ART_MEAN,
+    CAN_PCW_MEAN,
+    CAN_CARDIAC_OUTPUT,
+    CAN_HIST_CIGARETTE,
+    CAN_MALIG,
+    CAN_LAST_STAT,
+    CAN_AGE_IN_MONTHS_AT_LISTING,
+    CAN_LAST_ACT_STAT_DT,
+    CAN_LAST_INACT_STAT_DT,
+    CAN_INIT_STAT,
+    CAN_ANGINA,
+    CAN_ANGINA_CAD,
+    CAN_PEPTIC_ULCER,
+    CAN_EXERCISE_O2)
 
 missing_data_check <- tibble(
-  pct_missing = vector(mode = "double", length = ncol(init_list_post)),
-  var_names = colnames(init_list_post))
+  pct_missing = vector(mode = "double", length = ncol(full_list_post)),
+  var_names = colnames(full_list_post))
 
-for (i in 1:ncol(init_list_post)) {
+for (i in 1:ncol(full_list_post)) {
   
   missing_data_check$pct_missing[i] <-
-    sum(is.na(init_list_post[, i])) / nrow(init_list_post)
+    sum(is.na(full_list_post[, i])) / nrow(full_list_post)
 }
 
 missing_data_check <- missing_data_check %>% 
   filter(pct_missing == 1) %>% 
   arrange(desc(pct_missing))
 
-# this line removes 4 variables from init_list_post which are completely missing
+# this line removes 4 variables from full_list_post which are completely missing
 # Variable names: CAN_ANGINA, CAN_ANGINA_CAD, CAN_PEPTIC_ULCER, CAN_TOT_ALBUMIN
-init_list_post <- init_list_post %>% select(-missing_data_check$var_names)
+full_list_post <- full_list_post %>% select(-missing_data_check$var_names)
+
 ```
 
-# 4. Add initial justification form for each candidate to init_list_post
+# 3. Pivot cand_thor and tx_hr by date, then full_join
 
 ```{r}
-init_just_forms <- just_form_post %>% 
-  group_by(PX_ID) %>% 
-  slice_min(FormAddDt, with_ties = FALSE) %>% 
-  ungroup()
+full_list_post <- full_list_post %>%
+  distinct() %>% 
+  pivot_longer(cols = ends_with("DT"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, unique_event, unique_date, 
+         WL_ORG:CAN_EXERCISE_O2)
+
+tx_hr_post <- tx_hr %>% 
+  filter(PX_ID %in% full_list_post$PX_ID) %>% 
+  distinct() %>% 
+  select(PX_ID, ORG_TY, REC_TX_DT, REC_POSTX_LOS, REC_A_MM_EQUIV_TX,
+                     REC_B_MM_EQUIV_TX, REC_DR_MM_EQUIV_TX, REC_DGN, REC_CTR_CD,
+                     REC_CTR_TY, REC_PX_STAT, REC_PX_STAT_DT,
+                     REC_DISCHRG_DT, REC_ADMISSION_DT, REC_MED_COND, 
+                     REC_FUNCTN_STAT, REC_PRIMARY_PAY, REC_HGT_CM, REC_WGT_KG,
+                     REC_BMI, REC_HIV_STAT, REC_CMV_STAT, REC_HCV_STAT,
+                     REC_EBV_STAT, REC_LIFE_SUPPORT, REC_ECMO,
+                     REC_IABP, REC_PGE, REC_INOTROP, REC_VENTILATOR, REC_VAD1,
+                     REC_VAD2, REC_CREAT, REC_TOT_BILI, REC_CHRONIC_STEROIDS,
+                     REC_TXFUS, REC_INFECT_IV_DRUG, REC_DIAL, 
+                     REC_VENTILATOR_SUPPORT, REC_HR_ISCH, REC_POSTX_STROKE,
+                     REC_POSTX_DIAL, REC_POSTX_PACEMAKER,
+                     REC_ACUTE_REJ_EPISODE, REC_CTR_ID, REC_AGE_IN_MONTHS_AT_TX,
+                     REC_A1, REC_A2, REC_B1, REC_B2, REC_DR1, REC_DR2,
+                     TFL_LASTATUS, TFL_GRAFT_DT, TFL_DEATH_DT, PERS_RETX,
+                     TFL_LAFUDATE, REC_MM_EQUIV_TX)
+
+tx_hr_missing_data_check <- tibble(
+  pct_missing = vector(mode = "double", length = ncol(tx_hr_post)),
+  var_names = colnames(tx_hr_post))
+
+for (i in 1:ncol(tx_hr_post)) {
+  
+  tx_hr_missing_data_check$pct_missing[i] <-
+    sum(is.na(tx_hr_post[, i])) / nrow(tx_hr_post)
+}
+
+tx_hr_missing_data_check <- tx_hr_missing_data_check %>% 
+  filter(pct_missing == 1) %>% 
+  arrange(desc(pct_missing))
+
+# this line removes 0 variables from tx_hr_post which are completely missing
+tx_hr_post <- tx_hr_post %>% select(-tx_hr_missing_data_check$var_names)
+
+
+tx_hr_post <- tx_hr_post %>% 
+  mutate(TFL_LAST_FU_DT = TFL_LAFUDATE) %>%
+  select(-TFL_LAFUDATE) %>% 
+  pivot_longer(cols = ends_with("DT"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>% 
+  select(PX_ID, unique_event, unique_date, ORG_TY:REC_MM_EQUIV_TX)
+
+full_list_post <- full_list_post %>% 
+  full_join(tx_hr_post, by = c("PX_ID", "unique_date"), 
+            suffix = c(".cand_thor", ".tx_hr")) %>% 
+  arrange(PX_ID, unique_date)
+  
+```
+
+# 4. Pivot justification forms for each candidate by date
+
+```{r add just forms}
 
 just_stat1_post <- just_stat1_post %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>%
   mutate(stat1_criteria = case_when(
     CriteriaEcmoSupport == 1 ~ "Status 1: ECMO",
     CriteriaBivadSupport == 1 ~ "Status 1: BiVAD",
     CriteriaMcsdSupport == 1 ~ "Status 1: MCSD with ventricular arrhythmia",
-    TRUE ~ "Status 1: Exception"))
-
-init_list_post <- init_list_post %>% 
-  left_join(just_stat1_post %>% 
-              filter(PX_ID %in% init_just_forms$PX_ID) %>%
-              group_by(PX_ID) %>% 
-              slice_min(ChangeDate, with_ties = FALSE) %>% 
-              ungroup() %>% 
-              select(stat1_criteria, EcmoSystolicBloodPressure, 
-                     EcmoCardiacIndex, EcmoCapWedgePressure, EcmoWithoutHemoSbp,
-                     EcmoWithoutHemoArtLac, EcmoWithoutHemoAst,
-                     EcmoWithoutHemoAlt, PX_ID), by = "PX_ID")
+    TRUE ~ "Status 1: Exception"),
+    ChangeDt = ChangeDate) %>% 
+  pivot_longer(cols = ends_with("Dt"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  mutate(
+    EcmoSystolicBloodPressure = case_when(!is.na(EcmoSystolicBloodPressureDt) ~
+                                            EcmoSystolicBloodPressure),
+    EcmoCardiacIndex = case_when(!is.na(EcmoCardiacIndexDt) ~
+                                   EcmoCardiacIndex),
+    EcmoCapWedgePressure = case_when(!is.na(EcmoCapWedgePressureDt) ~
+                                   EcmoCapWedgePressure),
+    EcmoWithoutHemoSbp = case_when(!is.na(EcmoWithoutHemoSbpDt) ~
+                                   EcmoWithoutHemoSbp),
+    EcmoWithoutHemoArtLac = case_when(!is.na(EcmoWithoutHemoArtLacDt) ~
+                                   EcmoWithoutHemoArtLac),
+    EcmoWithoutHemoAst = case_when(!is.na(EcmoWithoutHemoAstDt) ~
+                                   EcmoWithoutHemoAst),
+    EcmoWithoutHemoAlt = case_when(!is.na(EcmoWithoutHemoAltDt) ~
+                                   EcmoWithoutHemoAlt)) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, JustId, unique_event, unique_date,
+         stat1_criteria, EcmoSystolicBloodPressure, EcmoCardiacIndex, 
+         EcmoCapWedgePressure, EcmoWithoutHemoSbp, EcmoWithoutHemoArtLac, 
+         EcmoWithoutHemoAst, EcmoWithoutHemoAlt)
 
 just_stat2_post <- just_stat2_post %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>%
   mutate(stat2_criteria = case_when(
     CriteriaLvadSupport == 1 ~ "Status 2: Non-dischargeable LVAD",
     CriteriaDurableDevSupport == 1 ~ "Status 2: Durable VAD",
@@ -248,24 +381,56 @@ just_stat2_post <- just_stat2_post %>%
     CriteriaMcsdEndovasSupp == 1 ~ "Status 2: Endovascular MCSD",
     CriteriaIabpSupport == 1 ~ "Status 2: IABP",
     CriteriaVentEpisode == 1 ~ "Status 2: Ventricular episodes",
-    TRUE ~ "Status 2: Exception"))
-
-init_list_post <- init_list_post %>% 
-  left_join(just_stat2_post %>% 
-              filter(PX_ID %in% init_just_forms$PX_ID) %>%
-              group_by(PX_ID) %>% 
-              slice_min(ChangeDate, with_ties = FALSE) %>% 
-              ungroup() %>% 
-              select(stat2_criteria, McsdCardiacIndex, McsdCapWedgePressure,
-                     McsdSystolicBloodPressure, McsdWithoutHemoSbp,
-                     McsdWithoutHemoArtLac, McsdWithoutHemoAst,
-                     McsdWithoutHemoAlt, IabpCardiacIndex, IabpCapWedgePressure,
-                     IabpSystolicBloodPressure, IabpWithoutHemoSbp, 
-                     IabpWithoutHemoArtLac, IabpWithoutHemoAst, 
-                     IabpWithoutHemoAlt, PX_ID), 
-            by = "PX_ID")
+    TRUE ~ "Status 2: Exception"),
+    ChangeDt = ChangeDate) %>% 
+  pivot_longer(cols = ends_with("Dt"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  mutate(
+    McsdCardiacIndex = case_when(!is.na(McsdCardiacIndexDt) ~ McsdCardiacIndex),
+    McsdCapWedgePressure = case_when(!is.na(McsdCapWedgePressureDt) ~ 
+                                       McsdCapWedgePressure),
+    McsdSystolicBloodPressure = case_when(!is.na(McsdSystolicBloodPressureDt) ~ 
+                                       McsdSystolicBloodPressure),
+    McsdWithoutHemoSbp = case_when(!is.na(McsdWithoutHemoSbpDt) ~ 
+                                       McsdWithoutHemoSbp),
+    McsdWithoutHemoArtLac = case_when(!is.na(McsdWithoutHemoArtLacDt) ~ 
+                                       McsdWithoutHemoArtLac),
+    McsdWithoutHemoAst = case_when(!is.na(McsdWithoutHemoAstDt) ~ 
+                                       McsdWithoutHemoAst),
+    IabpCardiacIndex = case_when(!is.na(IabpCardiacIndexDt) ~ 
+                                       IabpCardiacIndex),
+    IabpCapWedgePressure = case_when(!is.na(IabpCapWedgePressureDt) ~ 
+                                       IabpCapWedgePressure),
+    IabpSystolicBloodPressure = case_when(!is.na(IabpSystolicBloodPressureDt) ~ 
+                                       IabpSystolicBloodPressure),
+    IabpWithoutHemoSbp = case_when(!is.na(IabpWithoutHemoSbpDt) ~ 
+                                       IabpWithoutHemoSbp),
+    IabpWithoutHemoArtLac = case_when(!is.na(IabpWithoutHemoArtLacDt) ~ 
+                                       IabpWithoutHemoArtLac),
+    IabpWithoutHemoAst = case_when(!is.na(IabpWithoutHemoAstDt) ~ 
+                                       IabpWithoutHemoAst),
+    IabpWithoutHemoAlt = case_when(!is.na(IabpWithoutHemoAltDt) ~ 
+                                       IabpWithoutHemoAlt)) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, JustId, unique_event, unique_date,
+         stat2_criteria, McsdCardiacIndex, 
+         McsdCapWedgePressure, McsdSystolicBloodPressure, McsdWithoutHemoSbp, 
+         McsdWithoutHemoArtLac, McsdWithoutHemoAst, 
+         IabpCardiacIndex, IabpCapWedgePressure, IabpSystolicBloodPressure,
+         IabpWithoutHemoSbp, IabpWithoutHemoArtLac, IabpWithoutHemoAst,
+         IabpWithoutHemoAlt)
 
 just_stat3_post <- just_stat3_post %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>%
   mutate(stat3_criteria = case_when(
     CriteriaLvadDiscSupport == 1 ~ "Status 3: Dischargeable LVAD discretionary time",
     CriteriaInotropeSupport == 1 ~ "Status 3: Inotropes with hemodynamic monitoring",
@@ -279,22 +444,39 @@ just_stat3_post <- just_stat3_post %>%
     CriteriaLvadSupport == 1 ~ "Status 3: Non-dischargeable LVAD after 14 days",
     CriteriaPercuSupport == 1 ~ "Status 3: Endovascular MCSD after 14 days",
     CriteriaIabpSupport == 1 ~ "Status 3: IABP after 14 days",
-    TRUE ~ "Status 3: Exception"))
+    TRUE ~ "Status 3: Exception"),
+    ChangeDt = ChangeDate) %>% 
+  pivot_longer(cols = ends_with("Dt"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  mutate(
+    InoCardiacIndex = case_when(!is.na(InoCardiacIndexDt) ~ InoCardiacIndex),
+    InoCapWedgePressure = case_when(!is.na(InoCapWedgePressureDt) ~ 
+                                      InoCapWedgePressure),
+    InoSysBloodPressure = case_when(!is.na(InoSysBloodPressureDt) ~ 
+                                      InoSysBloodPressure),
+    McsdWithRhfPcwp = case_when(!is.na(McsdWithRhfPcwpDt) ~ 
+                                      McsdWithRhfPcwp),
+    McsdWithRhfVenPressure = case_when(!is.na(McsdWithRhfVenPressureDt) ~ 
+                                      McsdWithRhfVenPressure)) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, JustId, unique_event, unique_date,
+         stat3_criteria, InoCardiacIndex,
+         InoCapWedgePressure, InoSysBloodPressure, McsdLactateDehydrogenase,
+         McsdPlasmaFreeHemoglobin, McsdHemoglobinuria,
+         McsdWithPumpTransIscAttack, McsdWithRhfPcwp, McsdWithRhfVenPressure, 
+         MucosalBleedNumHosp)
 
-init_list_post <- init_list_post %>% 
-  left_join(just_stat3_post %>% 
-              filter(PX_ID %in% init_just_forms$PX_ID) %>%
-              group_by(PX_ID) %>% 
-              slice_min(ChangeDate, with_ties = FALSE) %>% 
-              ungroup() %>% 
-              select(stat3_criteria, InoCardiacIndex, InoCapWedgePressure,
-                     InoSysBloodPressure, McsdLactateDehydrogenase,
-                     McsdPlasmaFreeHemoglobin, McsdHemoglobinuria,
-                     McsdWithPumpTransIscAttack, McsdWithRhfPcwp,
-                     McsdWithRhfVenPressure, MucosalBleedNumHosp, PX_ID), 
-            by = "PX_ID")
-
-just_stat4_post <- just_stat4_post %>% 
+just_stat4_post <- just_stat4_post %>%
+  distinct(across(-JustId), .keep_all = TRUE) %>% 
   mutate(stat4_criteria = case_when(
     CriteriaLvadSupport == 1 ~ "Status 4: Dischargeable LVAD without discretionary time",
     CriteriaInotropeSupport == 1 ~ "Status 4: Inotropes without hemodynamic monitoring",
@@ -302,65 +484,48 @@ just_stat4_post <- just_stat4_post %>%
     CriteriaIschemicHeart == 1 ~ "Status 4: Ischemic heart disease with intractable angina",
     CriteriaCardiomyopathy == 1 ~ "Status 4: Amyloidosis, HCM, or RCM",
     CriteriaRetransplant == 1 ~ "Status 4: Re-transplant",
-    TRUE ~ "Status 4: Exception"))
+    TRUE ~ "Status 4: Exception"),
+    ChangeDt = ChangeDate) %>%
+  pivot_longer(cols = ends_with("Dt"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  mutate(
+    InotropeCardiacIndex = case_when(!is.na(InotropeCardiacIndexDt) ~ 
+                                       InotropeCardiacIndex),
+    InotropePcwp = case_when(!is.na(InotropePcwpDt) ~ 
+                                       InotropePcwp)) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, JustId, unique_event, unique_date,
+         stat4_criteria, InotropeCardiacIndex, InotropePcwp)
 
-init_list_post <- init_list_post %>% 
-  left_join(just_stat4_post %>% 
-              filter(PX_ID %in% init_just_forms$PX_ID) %>%
-              group_by(PX_ID) %>% 
-              slice_min(ChangeDate, with_ties = FALSE) %>% 
-              ungroup() %>% 
-              select(stat4_criteria, InotropeCardiacIndex, InotropePcwp, PX_ID),
-            by = "PX_ID")
-
-init_list_post <- init_list_post %>% 
-  mutate(status_criteria = coalesce(stat1_criteria, 
-                                    stat2_criteria, 
-                                    stat3_criteria, 
+# full join on common variables
+full_list_post <- full_list_post %>% 
+  full_join(just_stat1_post, by = c("PX_ID", "unique_event", "unique_date")) %>% 
+  full_join(just_stat2_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
+  full_join(just_stat3_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
+  full_join(just_stat4_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>% 
+  
+  mutate(status_criteria = coalesce(stat1_criteria,
+                                    stat2_criteria,
+                                    stat3_criteria,
                                     stat4_criteria)) %>%
-  mutate(status_criteria = 
-           ifelse(is.na(status_criteria), "Status 6", status_criteria)) %>% 
-  select(-stat1_criteria, -stat2_criteria, -stat3_criteria, -stat4_criteria)
+  mutate(status_criteria =
+           ifelse(is.na(status_criteria), "Status 6", status_criteria)) %>%
+  select(-stat1_criteria, -stat2_criteria, -stat3_criteria, -stat4_criteria) %>% 
+  arrange(PX_ID, unique_date)
 ```
 
-# 5. Add first risk stratification datum for each candidate to init_list_post
+# 7. Reshaping risk stratification data to include rows by unique observation date
 
-```{r}
-init_risk_strat_data <- risk_strat_post %>% 
-  group_by(PX_ID) %>% 
-  slice_min(ChangeDate, with_ties = FALSE) %>% 
-  ungroup()
-
-init_list_post <- init_list_post %>% 
-  left_join(risk_strat_post %>% 
-              filter(PX_ID %in% init_risk_strat_data$PX_ID) %>%
-              group_by(PX_ID) %>% 
-              slice_min(ChangeDate, with_ties = FALSE) %>% 
-              ungroup() %>% 
-              select(CandHistStroke, CandHistThromb, CPTestMvo2, CPTestRer, 
-                     CPTestVeVco2, SenDataCpra, SenDataMfiThreshold, HemoSbp, 
-                     HemoDbp, HemoRestingHeartRate, HemoCvp, HemoPasp, HemoPadp,
-                     HemoMeanPressure, HemoPcwp, HemoLvedp, HemoCardiacOutput, 
-                     HemoCardiacIndex, HemoSvo2, HemoHemoglobin, VadLdhLevels, 
-                     VadPlasmaFreeHemo, VadHemoglobinuria, HrSevFailSodium, 
-                     HrSevFailCreatinine, HrSevFailBun, HrSevFailAlbumin, 
-                     HrSevFailAsparTrans, HrSevFailBilirubin, 
-                     HrSevFailArterialLact, HrSevFailInr, HrSevFailBnp, PX_ID), 
-            by = "PX_ID")
-```
-
-# 6. Write out csv of initial listing state during post-policy era
-
-```{r}
-# not run
-# write_csv(init_list_post, file = "initial_listing_state.csv")
-```
-
-# TODO 7. Add in tx_hr data from time of transplant
-
-# 8. Reshaping risk stratification data to include rows by unique observation date
-
-```{r}
+```{r reshape data set}
 risk_strat_data_hr_long <- risk_strat_data_hr %>% 
   pivot_longer(cols = ends_with("Dt"),
                names_to = "event", 
@@ -370,7 +535,9 @@ risk_strat_data_hr_long <- risk_strat_data_hr %>%
 
 risk_strat_data_hr_wide <- risk_strat_data_hr_long %>%
   group_by(date) %>% 
-  mutate(unique_date = date) %>% 
+  mutate(unique_date = date, PX_ID = px_id) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
   pivot_wider(names_from = event, values_from = date) %>% 
   mutate(
     CPTestMvo2 = case_when(!is.na(CPTestDt) ~ CPTestMvo2),
@@ -404,18 +571,43 @@ risk_strat_data_hr_wide <- risk_strat_data_hr_long %>%
                                         HrSevFailArterialLact),
     HrSevFailInr = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInr),
     HrSevFailInrAntiCoag = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInrAntiCoag),
-    HrSevFailBnp = case_when(!is.na(HrSevFailBnpDt) ~ HrSevFailBnp),
-    PX_ID = px_id) %>% 
+    HrSevFailBnp = case_when(!is.na(HrSevFailBnpDt) ~ HrSevFailBnp)) %>%
   
-  select(CandHistStroke, CandHistThromb, CPTestDt, CPTestMvo2, CPTestRer, 
-                     CPTestVeVco2, SenDataDt, SenDataCpra, SenDataMfiThreshold, HemoDt, HemoObtainedOnSupport, HemoSbp,
-                     HemoDbp, HemoRestingHeartRate, HemoCvp, HemoPasp, HemoPadp,
-                     HemoMeanPressure, HemoPcwp, HemoLvedp, HemoCardiacOutput, 
-                     HemoCardiacIndex, HemoSvo2, HemoHemoglobin, VadLdhLevels, VadLdhLevelsDt,
-                     VadPlasmaFreeHemo, VadPlasmaFreeHemoDt, VadHemoglobinuria, HrSevFailSodium, HrSevFailSodiumDt,
-                     HrSevFailCreatinine, HrSevFailCreatinineDt, HrSevFailBun, HrSevFailBunDt, HrSevFailAlbumin, HrSevFailAlbuminDt,
-                     HrSevFailAsparTrans, HrSevFailAsparTransDt, HrSevFailBilirubin, HrSevFailBilirubinDt,
-                     HrSevFailArterialLact, HrSevFailArterialLactDt, HrSevFailInr, HrSevFailInrDt, HrSevFailInrAntiCoag, HrSevFailBnp, HrSevFailBnpDt, PX_ID)
+  mutate(t_start = 0, t_stop = 0) %>% 
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>% 
+  
+  select(PX_ID, RiskStratId, ChangeDate, unique_date, unique_event, t_start, 
+         t_stop, CandHistNumSternotomies, CandHistStroke, CandHistThromb,
+         CandHistNumHospAdmn, CurrTherOnLoopDiuretic, CurrTherVasoactiveSupport,
+         CurrTherAntiArrhythmics, CurrTherPulVas, CurrTherOnDialysis,
+         CurrTherMechVent, CPTestMvo2, CPTestRer, CPTestVeVco2, SenDataCpra, 
+         SenDataMfiThreshold, HemoObtainedOnSupport, HemoSbp, HemoDbp,
+         HemoRestingHeartRate, HemoCvp, HemoPasp, HemoPadp, HemoMeanPressure, 
+         HemoPcwp, HemoLvedp, HemoCardiacOutput, HemoCardiacIndex, HemoSvo2,
+         HemoHemoglobin, VadLdhLevels, VadPlasmaFreeHemo, VadHemoglobinuria, 
+         HrSevFailSodium, HrSevFailCreatinine, HrSevFailBun, HrSevFailAlbumin, 
+         HrSevFailAsparTrans, HrSevFailBilirubin, HrSevFailArterialLact, 
+         HrSevFailInr, HrSevFailInrAntiCoag, HrSevFailBnp)  
+
+for (i in 2:nrow(risk_strat_data_hr_wide)) {
+  if (risk_strat_data_hr_wide$PX_ID[[i]] == 
+      risk_strat_data_hr_wide$PX_ID[[i-1]]) {
     
+    risk_strat_data_hr_wide$t_stop[[i-1]] = 
+      risk_strat_data_hr_wide$unique_date[[i]] - 
+      risk_strat_data_hr_wide$unique_date[[i-1]] +
+      risk_strat_data_hr_wide$t_start[[i-1]]
     
+    risk_strat_data_hr_wide$t_start[[i]] = risk_strat_data_hr_wide$t_stop[[i-1]]
+    
+  } else {
+    
+    risk_strat_data_hr_wide$t_stop[[i-1]] = 
+      risk_strat_data_hr_wide$t_start[[i-1]]
+    
+    risk_strat_data_hr_wide$t_start[[i]] = 0
+      
+  }
+}
 ```
