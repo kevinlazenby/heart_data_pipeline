@@ -31,6 +31,7 @@ library(here)
 library(readr)
 library(lubridate)
 library(boxr)
+library(zoo)
 
 here::i_am("create_post_policy_dataset.Rmd")
 ```
@@ -246,7 +247,7 @@ full_list_post <- full_list_post %>% select(-missing_data_check$var_names)
 
 ```
 
-# 3. Pivot cand_thor and tx_hr by date, then full_join
+# 4. Pivot cand_thor and tx_hr by date, then full_join
 
 ```{r}
 full_list_post <- full_list_post %>%
@@ -322,13 +323,78 @@ tx_hr_post <- tx_hr_post %>%
   select(PX_ID, unique_event, unique_date, ORG_TY:REC_MM_EQUIV_TX)
 
 full_list_post <- full_list_post %>% 
-  full_join(tx_hr_post, by = c("PX_ID", "unique_date"), 
-            suffix = c(".cand_thor", ".tx_hr")) %>% 
-  arrange(PX_ID, unique_date)
+  
+  # full join by common variables, thus no need for suffix
+  full_join(tx_hr_post, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  
+  # combines events if events in cand_thor and tx_hr happened on the same day
+  group_by(PX_ID, unique_date) %>% 
+  mutate(unique_event = str_c(unique_event, collapse = ",")) %>% 
+  
+  # removes redundant rows after combining events above
+  group_by(PX_ID, unique_date) %>% 
+  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>% 
+  distinct() %>% 
+  
+  # fills in missing values for each candidate, since all vars in cand_thor and
+  # tx_hr do not have multiple values across time
+  group_by(PX_ID) %>% 
+  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+  
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
   
 ```
 
-# 4. Pivot justification forms for each candidate by date
+# 5. Pivot stathist_thor by date, then join with full_list_post
+
+```{r pivot stathist_thor}
+
+stathist_post <- stathist_post %>% 
+  select(PX_ID, CANHX_BEGIN_DT, CANHX_END_DT, CANHX_STAT_CD, 
+         CANHX_REASON_STAT_INACT) %>% 
+  pivot_longer(cols = ends_with("DT"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, unique_event, unique_date, CANHX_STAT_CD, 
+         CANHX_REASON_STAT_INACT)
+
+full_list_post <- full_list_post %>% 
+  
+  # full join by common variables, thus no need for suffix
+  full_join(stathist_post, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  
+  # combines events if events happened on the same day
+  group_by(PX_ID, unique_date) %>%
+  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+
+  # removes redundant rows after combining events above
+  group_by(PX_ID, unique_date) %>%
+  fill(WL_ORG:CANHX_REASON_STAT_INACT, .direction = "downup") %>%
+  distinct() %>%
+
+  # fills in missing status code for each candidate, but only fills down to 
+  # preserve changes in status over time (similar/same mechanism as na.locf)
+  group_by(PX_ID) %>%
+  fill(CANHX_STAT_CD, .direction = "down") %>%
+  
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
+
+```
+
+# 4. Pivot justification forms by date, then join with full_list_post
 
 ```{r add just forms}
 
@@ -506,9 +572,7 @@ just_stat4_post <- just_stat4_post %>%
   select(PX_ID, JustId, unique_event, unique_date,
          stat4_criteria, InotropeCardiacIndex, InotropePcwp)
 
-# full join on common variables
-full_list_post <- full_list_post %>% 
-  full_join(just_stat1_post, by = c("PX_ID", "unique_event", "unique_date")) %>% 
+just_all_stat_post <- just_stat1_post %>% 
   full_join(just_stat2_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
   full_join(just_stat3_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
   full_join(just_stat4_post, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>% 
@@ -519,21 +583,45 @@ full_list_post <- full_list_post %>%
                                     stat4_criteria)) %>%
   mutate(status_criteria =
            ifelse(is.na(status_criteria), "Status 6", status_criteria)) %>%
-  select(-stat1_criteria, -stat2_criteria, -stat3_criteria, -stat4_criteria) %>% 
-  arrange(PX_ID, unique_date)
+  select(-stat1_criteria, -stat2_criteria, -stat3_criteria, -stat4_criteria)
+  
+# full join on common variables
+full_list_post <- full_list_post %>% 
+  full_join(just_all_stat_post, by = c("PX_ID", "unique_event", "unique_date")) %>% 
+  
+  # justification forms have date-times instead of dates, so converting to date
+  mutate(unique_date = floor_date(unique_date, unit = "day")) %>%
+  
+  # fills status criteria from justification form to all rows within each
+  # group of PX_ID and JustId
+  group_by(PX_ID, JustId) %>% 
+  fill(status_criteria, .direction = "downup") %>% 
+  ungroup() %>% 
+  
+  # # TODO: fix bug that does not combine all events (see PX_ID = 1238278, 1238293)
+  # # combines events if events happened on the same day
+  # group_by(PX_ID, unique_date) %>%
+  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+  # 
+  # # removes redundant rows after combining events above
+  # group_by(PX_ID, unique_date) %>%
+  # fill(WL_ORG:InotropePcwp, .direction = "downup") %>%
+  # distinct() %>%
+  
+  # arranges dataset by PX_ID and event date for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
 ```
 
-# 7. Reshaping risk stratification data to include rows by unique observation date
+# 7. Pivoting risk stratification data by date, then joining with full_list_post
 
-```{r reshape data set}
-risk_strat_data_hr_long <- risk_strat_data_hr %>% 
+```{r pivot risk strat data}
+risk_strat_post <- risk_strat_post %>% 
   pivot_longer(cols = ends_with("Dt"),
                names_to = "event", 
                values_to = "date", 
                values_drop_na = TRUE) %>%
-  arrange(date)
-
-risk_strat_data_hr_wide <- risk_strat_data_hr_long %>%
+  
   group_by(date) %>% 
   mutate(unique_date = date, PX_ID = px_id) %>%
   group_by(PX_ID, date) %>% 
@@ -572,13 +660,12 @@ risk_strat_data_hr_wide <- risk_strat_data_hr_long %>%
     HrSevFailInr = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInr),
     HrSevFailInrAntiCoag = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInrAntiCoag),
     HrSevFailBnp = case_when(!is.na(HrSevFailBnpDt) ~ HrSevFailBnp)) %>%
-  
-  mutate(t_start = 0, t_stop = 0) %>% 
+
   arrange(PX_ID, unique_date) %>% 
   ungroup() %>% 
   
-  select(PX_ID, RiskStratId, ChangeDate, unique_date, unique_event, t_start, 
-         t_stop, CandHistNumSternotomies, CandHistStroke, CandHistThromb,
+  select(PX_ID, RiskStratId, ChangeDate, unique_date, unique_event, 
+         CandHistNumSternotomies, CandHistStroke, CandHistThromb,
          CandHistNumHospAdmn, CurrTherOnLoopDiuretic, CurrTherVasoactiveSupport,
          CurrTherAntiArrhythmics, CurrTherPulVas, CurrTherOnDialysis,
          CurrTherMechVent, CPTestMvo2, CPTestRer, CPTestVeVco2, SenDataCpra, 
@@ -590,24 +677,53 @@ risk_strat_data_hr_wide <- risk_strat_data_hr_long %>%
          HrSevFailAsparTrans, HrSevFailBilirubin, HrSevFailArterialLact, 
          HrSevFailInr, HrSevFailInrAntiCoag, HrSevFailBnp)  
 
-for (i in 2:nrow(risk_strat_data_hr_wide)) {
-  if (risk_strat_data_hr_wide$PX_ID[[i]] == 
-      risk_strat_data_hr_wide$PX_ID[[i-1]]) {
+full_list_post <- full_list_post %>% 
+  
+  # full join by common variables, thus no need for suffix
+  full_join(risk_strat_post, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  
+  # # combines events if events in cand_thor and tx_hr happened on the same day
+  # group_by(PX_ID, unique_date) %>% 
+  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>% 
+  
+  # # removes redundant rows after combining events above
+  # group_by(PX_ID, unique_date) %>% 
+  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>% 
+  # distinct() %>% 
+  
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
+
+```
+
+# 8. Calculating number of days between each observation in full_list_post, by PX_ID
+
+```{r}
+
+full_list_post <- full_list_post %>%
+  ungroup() %>% 
+  arrange(PX_ID, unique_date)
+
+for (i in 2:nrow(full_list_post)) {
+  if (full_list_post$PX_ID[[i]] == 
+      full_list_post$PX_ID[[i-1]]) {
     
-    risk_strat_data_hr_wide$t_stop[[i-1]] = 
-      risk_strat_data_hr_wide$unique_date[[i]] - 
-      risk_strat_data_hr_wide$unique_date[[i-1]] +
-      risk_strat_data_hr_wide$t_start[[i-1]]
+    full_list_post$t_stop[[i-1]] = 
+      full_list_post$unique_date[[i]] - 
+      full_list_post$unique_date[[i-1]] +
+      full_list_post$t_start[[i-1]]
     
-    risk_strat_data_hr_wide$t_start[[i]] = risk_strat_data_hr_wide$t_stop[[i-1]]
+    full_list_post$t_start[[i]] = full_list_post$t_stop[[i-1]]
     
   } else {
     
-    risk_strat_data_hr_wide$t_stop[[i-1]] = 
-      risk_strat_data_hr_wide$t_start[[i-1]]
+    full_list_post$t_stop[[i-1]] = 
+      full_list_post$t_start[[i-1]]
     
-    risk_strat_data_hr_wide$t_start[[i]] = 0
+    full_list_post$t_start[[i]] = 0
       
   }
 }
+
 ```
