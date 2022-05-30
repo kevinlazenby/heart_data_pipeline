@@ -107,13 +107,24 @@ tx_hr <- read_sas(here(curr_data_release, "tx_hr.sas7bdat"), NULL) %>%
 
 ```{r link data sets}
 
+# since this is a left_join, this step excludes 134 PX_IDs that lack a 
+# corresponding JustId. 126 of these 134 have CAN_INIT_STAT = 2999
+# (inactive status), so I assume these represent data entry errors
 just_form_hr_data_link <- just_form_hr_data_link %>% 
   left_join(risk_strat_data_hr %>%
               select(px_id, WlregAuditId), by = "WlregAuditId") %>% 
   mutate(PX_ID = px_id) %>% select(-px_id)
 
 just_form_hr <- just_form_hr %>% 
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
+  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId") %>% 
+  left_join(thor_support_device %>% select(DeviceId:OtherSpecify),
+            by = c("ThorSupportDevicePrimary" = "DeviceId")) %>% 
+  left_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")
+  
+  # # can pipe in this code to include secondary VADs
+  # left_join(thor_support_device %>% select(DeviceId:OtherSpecify),
+  #           by = c("ThorSupportDeviceSecondary" = "DeviceId"),
+  #           suffix = c(".primary", ".secondary"))
 
 just_form_hr_stat1 <- just_form_hr_stat1 %>% 
   left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
@@ -176,7 +187,8 @@ just_stat3_post <- just_form_hr_stat3 %>% filter(PX_ID %in% full_list_post$PX_ID
 # Status 4 justification forms from post-policy era
 just_stat4_post <- just_form_hr_stat4 %>% filter(PX_ID %in% full_list_post$PX_ID)
 
-# this block selects the 46 variables in cand_thor currently used in analysis
+# this block selects the 42 variables in cand_thor currently used in analysis
+# The following variables were removed:
 # CAN_DRUG_TREAT_HYPERTEN, completely missing post-policy
 # CAN_PERIPH_VASC, completely missing post-policy
 # CAN_ANTI_ARRYTHM, completely missing post-policy
@@ -387,6 +399,53 @@ full_list_post <- full_list_post %>%
   # preserve changes in status over time (similar/same mechanism as na.locf)
   group_by(PX_ID) %>%
   fill(CANHX_STAT_CD, .direction = "down") %>%
+  
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
+
+```
+
+# 6. Pivot just_form_hr by date, then join with full_list_post
+
+```{r pivot just_form_hr}
+
+just_form_post <- just_form_post %>% 
+  select(PX_ID, RequestedCandStatCd, ExtensionNumber, Exception, 
+         ThorSupportDevicePrimary, ThorSupportDeviceSecondary, descrip,
+         AdmittedToHospital, DeviceTypeId:EndDate) %>%
+  mutate(status_description = descrip, BeginDt = BeginDate, EndDt = EndDate) %>% 
+  select(-descrip, -BeginDate, -EndDate) %>% 
+  pivot_longer(cols = ends_with("Dt"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, unique_event, unique_date, RequestedCandStatCd, ExtensionNumber,
+         Exception, ThorSupportDevicePrimary, ThorSupportDeviceSecondary, 
+         status_description, AdmittedToHospital, DeviceTypeId:OtherSpecify)
+
+full_list_post <- full_list_post %>% 
+  
+  # full join by common variables, thus no need for suffix
+  full_join(just_form_post, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  
+  # combines events if events happened on the same day
+  group_by(PX_ID, unique_date) %>%
+  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+
+  # removes redundant rows after combining events above
+  group_by(PX_ID, unique_date) %>%
+  fill(WL_ORG:OtherSpecify, .direction = "downup") %>%
+  distinct() %>%
   
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>% 
