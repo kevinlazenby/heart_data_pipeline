@@ -371,10 +371,10 @@ init_list_pre <- cand_thor %>%
   filter(CAN_AGE_AT_LISTING > 17) %>% 
   filter(!(PX_ID %in% multi_organ_recipients$PX_ID))
 
-# Status 1A justification forms from post-policy era
+# Status 1A justification forms from pre-policy era
 statjust_1a_pre <- stat_just_hr1a %>% filter(PX_ID %in% init_list_pre$PX_ID)
 
-# Status 1B justification forms from post-policy era
+# Status 1B justification forms from pre-policy era
 statjust_1b_pre <- stat_just_hr1b %>% filter(PX_ID %in% init_list_pre$PX_ID)
 
 # this line selects the 46 variables in cand_thor currently used in analysis
@@ -426,7 +426,7 @@ hist <- stathist_thor %>% filter(PX_ID %in% init_list$PX_ID) %>%
 	       real_status = CANHX_STAT_CD, 
 	       rem_dt = CAN_REM_DT) %>% 
 	arrange(PX_ID, date_start) %>% 
-  select(PX_ID, status, real_status, date_start, date_end, rem_dt,  CAN_REM_CD)
+  select(PX_ID, status, real_status, date_start, date_end, rem_dt, CAN_REM_CD)
 hist <- distinct(hist, PX_ID, date_start, .keep_all = TRUE)
 remove(stathist_thor)
 #preview status history data set
