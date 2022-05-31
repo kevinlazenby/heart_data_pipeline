@@ -108,19 +108,21 @@ table_descriptions <-
 
 ```{r link data sets}
 
-# since this is a left_join, this step excludes 134 PX_IDs that lack a 
-# corresponding JustId. 126 of these 134 have CAN_INIT_STAT = 2999
-# (inactive status), so these may represent data submission errors
-just_form_hr_data_link <- just_form_hr_data_link %>% 
-  left_join(risk_strat_data_hr %>%
-              select(px_id, WlregAuditId), by = "WlregAuditId") %>% 
-  mutate(PX_ID = px_id) %>% select(-px_id)
+risk_strat_data_hr <- risk_strat_data_hr %>% 
+  full_join(just_form_hr_data_link, by = c("WlregAuditId", "ChangeDate"))
 
-just_form_hr <- just_form_hr %>%
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId") %>%
+just_form_hr_data_link <- just_form_hr_data_link %>% 
+  full_join(risk_strat_data_hr %>% 
+              select(WlregAuditId, JustId, ChangeDate, px_id),
+            by = c("WlregAuditId", "JustId", "ChangeDate")) %>% 
+  mutate(PX_ID = px_id) %>% 
+  select(-px_id)
+
+just_form_hr <- just_form_hr %>% select(-ChangeDate) %>% 
+  full_join(just_form_hr_data_link %>% select(-ChangeDate), by = "JustId") %>%
   
   # join status episode information by JustId
-  left_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")  
+  full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")  
   
   # device info appears to be full of duplicates and errors
   # # join device information by DeviceId
@@ -155,7 +157,7 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 ```{r apply exclusion criteria}
 
 # change these variables to customize inclusion criteria
-filter_date <- mdy("01/01/2010")
+filter_date <- mdy("10/18/2018")
 include_multi_organ_recipients <- TRUE
 missingness_threshold <- 1
 
@@ -402,7 +404,7 @@ full_list <- full_list %>%
 
 ```
 
-# 6. Pivot just_form by date, then join with full_list
+# 6. Join just forms with risk strat data, pivot combined dataset by date, then join with full_list
 
 ```{r pivot just_form_hr}
 
@@ -429,7 +431,12 @@ just_stat4 <- just_stat4 %>%
   distinct(across(-JustId), .keep_all = TRUE) %>%
   select(-ChangeDate)
 
-combined_just_forms <- just_form %>% 
+risk_strat <- risk_strat %>% 
+  distinct(across(-WlregAuditId), .keep_all = TRUE) %>%
+  select(-ChangeDate, ChangeUserId, ChangeRequestorId)
+
+combined_just_forms <- just_form %>%
+  full_join(risk_strat, by = "PX_ID")
   full_join(just_stat1, by = c("JustId", "PX_ID")) %>% 
   full_join(just_stat2, by = c("JustId", "PX_ID"),
             suffix = c(".stat1", ".stat2")) %>%
@@ -457,7 +464,7 @@ combined_just_forms <- just_form %>%
 full_list <- full_list %>% 
   
   # full join by common variables, thus no need for suffix
-  full_join(just_form, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  full_join(combined_just_forms, by = c("PX_ID", "unique_date", "unique_event")) %>% 
   
   # combines events if events happened on the same day
   group_by(PX_ID, unique_date) %>%
@@ -478,108 +485,108 @@ full_list <- full_list %>%
 
 ```{r pivot old just forms}
 
-just_stat1a <- just_stat1a %>% 
-  
-  # include only completed forms (small minority are excluded by this step)
-  filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
-  
-  # remove duplicate forms
-  distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
-  
-  select(PX_ID, CANHX_CHG_DT, CANHX_LAB_DT, CANHX_IABP_DT, CANHX_ECMO_DT, 
-         CANHX_LVAD_DT, CANHX_VAD_IMPLANT_DT, CANHX_TAH_DT, CANHX_RVAD_DT, 
-         CANHX_HEMO_DT, CAN_LISTING_CTR_ID, 
-         CANHX_STAT_CD, CANHX_STAT_TY, CANHX_FORM_STAT, 
-	       CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
-	       CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B, 
-         CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D, 
-         CANHX_ADULT_CRITERIA_E, CANHX_INTRP_DOBU, CANHX_INTRP_DOPA, 
-         CANHX_INTRP_MILRIN, CANHX_ADMITTED, CANHX_IABP, CANHX_ECMO, 
-         CANHX_LVAD_TYPE, CANHX_VAD, CANHX_TAH, CANHX_RVAD_TYPE, 
-         CANHX_CARD_OUTPUT, CANHX_HEMO_CI, CANHX_HEMO_INTRP_OBTAINED, 
-         CANHX_HEMO_BSA, CANHX_HEMO_PCWP, CANHX_HEMO_MPAP,
-	       CANHX_DEV_MALFUNCTN, CANHX_DEV_VENT_ARRYTHM) %>%
-  pivot_longer(cols = ends_with("DT"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, unique_event, unique_date, 
-         CAN_LISTING_CTR_ID:last_col())
-
-full_list <- full_list %>% 
-  
-  # full join by common variables, thus no need for suffix
-  full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-  
-  # combines events if events happened on the same day
-  group_by(PX_ID, unique_date) %>%
-  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-
-  # removes redundant rows after combining events above
-  group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:CANHX_DEV_VENT_ARRYTHM, .direction = "downup") %>%
-  distinct() %>%
-  
-  # arranges dataset for easy viewing
-  arrange(PX_ID, unique_date) %>% 
-  ungroup()
-
-# repeat the same process as abovew with just_stat1b
-just_stat1b <- just_stat1b %>% 
-  
-  # include only completed forms (small minority are excluded by this step)
-  filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
-  
-  # remove duplicate forms
-  distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
-  
-  mutate(low_dose_inotrope = 
-           pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>% 
-  
-  select(PX_ID, CANHX_CHG_DT, CANHX_VAD_IMPLANT_DT, CAN_LISTING_CTR_ID, 
-         CANHX_STAT_CD, CANHX_VAD, CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
-  pivot_longer(cols = ends_with("DT"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, unique_event, unique_date, 
-         CAN_LISTING_CTR_ID:last_col())
-
-full_list <- full_list %>% 
-  
-  # full join by common variables, thus no need for suffix
-  full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-  
-  # combines events if events happened on the same day
-  group_by(PX_ID, unique_date) %>%
-  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-
-  # removes redundant rows after combining events above
-  group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:last_col(), .direction = "downup") %>%
-  distinct() %>%
-  
-  # arranges dataset for easy viewing
-  arrange(PX_ID, unique_date) %>% 
-  ungroup()
+# just_stat1a <- just_stat1a %>% 
+#   
+#   # include only completed forms (small minority are excluded by this step)
+#   filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
+#   
+#   # remove duplicate forms
+#   distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
+#   
+#   select(PX_ID, CANHX_CHG_DT, CANHX_LAB_DT, CANHX_IABP_DT, CANHX_ECMO_DT, 
+#          CANHX_LVAD_DT, CANHX_VAD_IMPLANT_DT, CANHX_TAH_DT, CANHX_RVAD_DT, 
+#          CANHX_HEMO_DT, CAN_LISTING_CTR_ID, 
+#          CANHX_STAT_CD, CANHX_STAT_TY, CANHX_FORM_STAT, 
+# 	       CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
+# 	       CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B, 
+#          CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D, 
+#          CANHX_ADULT_CRITERIA_E, CANHX_INTRP_DOBU, CANHX_INTRP_DOPA, 
+#          CANHX_INTRP_MILRIN, CANHX_ADMITTED, CANHX_IABP, CANHX_ECMO, 
+#          CANHX_LVAD_TYPE, CANHX_VAD, CANHX_TAH, CANHX_RVAD_TYPE, 
+#          CANHX_CARD_OUTPUT, CANHX_HEMO_CI, CANHX_HEMO_INTRP_OBTAINED, 
+#          CANHX_HEMO_BSA, CANHX_HEMO_PCWP, CANHX_HEMO_MPAP,
+# 	       CANHX_DEV_MALFUNCTN, CANHX_DEV_VENT_ARRYTHM) %>%
+#   pivot_longer(cols = ends_with("DT"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, unique_event, unique_date, 
+#          CAN_LISTING_CTR_ID:last_col())
+# 
+# full_list <- full_list %>% 
+#   
+#   # full join by common variables, thus no need for suffix
+#   full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+#   
+#   # combines events if events happened on the same day
+#   group_by(PX_ID, unique_date) %>%
+#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+# 
+#   # removes redundant rows after combining events above
+#   group_by(PX_ID, unique_date) %>%
+#   fill(WL_ORG:CANHX_DEV_VENT_ARRYTHM, .direction = "downup") %>%
+#   distinct() %>%
+#   
+#   # arranges dataset for easy viewing
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup()
+# 
+# # repeat the same process as above with just_stat1b
+# just_stat1b <- just_stat1b %>% 
+#   
+#   # include only completed forms (small minority are excluded by this step)
+#   filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
+#   
+#   # remove duplicate forms
+#   distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
+#   
+#   mutate(low_dose_inotrope = 
+#            pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>% 
+#   
+#   select(PX_ID, CANHX_CHG_DT, CANHX_VAD_IMPLANT_DT, CAN_LISTING_CTR_ID, 
+#          CANHX_STAT_CD, CANHX_VAD, CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
+#   pivot_longer(cols = ends_with("DT"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, unique_event, unique_date, 
+#          CAN_LISTING_CTR_ID:last_col())
+# 
+# full_list <- full_list %>% 
+#   
+#   # full join by common variables, thus no need for suffix
+#   full_join(just_stat1b, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+#   
+#   # combines events if events happened on the same day
+#   group_by(PX_ID, unique_date) %>%
+#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+# 
+#   # removes redundant rows after combining events above
+#   group_by(PX_ID, unique_date) %>%
+#   fill(WL_ORG:last_col(), .direction = "downup") %>%
+#   distinct() %>%
+#   
+#   # arranges dataset for easy viewing
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup()
 
 ```
 
@@ -587,169 +594,169 @@ full_list <- full_list %>%
 
 ```{r pivot new just forms}
 
-just_stat1 <- just_stat1 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  mutate(ChangeDt = ChangeDate) %>% 
-  pivot_longer(cols = ends_with("Dt"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  mutate(
-    EcmoSystolicBloodPressure = case_when(!is.na(EcmoSystolicBloodPressureDt) ~
-                                            EcmoSystolicBloodPressure),
-    EcmoCardiacIndex = case_when(!is.na(EcmoCardiacIndexDt) ~
-                                   EcmoCardiacIndex),
-    EcmoCapWedgePressure = case_when(!is.na(EcmoCapWedgePressureDt) ~
-                                   EcmoCapWedgePressure),
-    EcmoWithoutHemoSbp = case_when(!is.na(EcmoWithoutHemoSbpDt) ~
-                                   EcmoWithoutHemoSbp),
-    EcmoWithoutHemoArtLac = case_when(!is.na(EcmoWithoutHemoArtLacDt) ~
-                                   EcmoWithoutHemoArtLac),
-    EcmoWithoutHemoAst = case_when(!is.na(EcmoWithoutHemoAstDt) ~
-                                   EcmoWithoutHemoAst),
-    EcmoWithoutHemoAlt = case_when(!is.na(EcmoWithoutHemoAltDt) ~
-                                   EcmoWithoutHemoAlt)) %>% 
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, JustId, unique_event, unique_date, 
-         EcmoSystolicBloodPressure, EcmoCardiacIndex, 
-         EcmoCapWedgePressure, EcmoWithoutHemoSbp, EcmoWithoutHemoArtLac, 
-         EcmoWithoutHemoAst, EcmoWithoutHemoAlt)
-
-just_stat2 <- just_stat2 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  mutate(ChangeDt = ChangeDate) %>% 
-  pivot_longer(cols = ends_with("Dt"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  mutate(
-    McsdCardiacIndex = case_when(!is.na(McsdCardiacIndexDt) ~ McsdCardiacIndex),
-    McsdCapWedgePressure = case_when(!is.na(McsdCapWedgePressureDt) ~ 
-                                       McsdCapWedgePressure),
-    McsdSystolicBloodPressure = case_when(!is.na(McsdSystolicBloodPressureDt) ~ 
-                                       McsdSystolicBloodPressure),
-    McsdWithoutHemoSbp = case_when(!is.na(McsdWithoutHemoSbpDt) ~ 
-                                       McsdWithoutHemoSbp),
-    McsdWithoutHemoArtLac = case_when(!is.na(McsdWithoutHemoArtLacDt) ~ 
-                                       McsdWithoutHemoArtLac),
-    McsdWithoutHemoAst = case_when(!is.na(McsdWithoutHemoAstDt) ~ 
-                                       McsdWithoutHemoAst),
-    IabpCardiacIndex = case_when(!is.na(IabpCardiacIndexDt) ~ 
-                                       IabpCardiacIndex),
-    IabpCapWedgePressure = case_when(!is.na(IabpCapWedgePressureDt) ~ 
-                                       IabpCapWedgePressure),
-    IabpSystolicBloodPressure = case_when(!is.na(IabpSystolicBloodPressureDt) ~ 
-                                       IabpSystolicBloodPressure),
-    IabpWithoutHemoSbp = case_when(!is.na(IabpWithoutHemoSbpDt) ~ 
-                                       IabpWithoutHemoSbp),
-    IabpWithoutHemoArtLac = case_when(!is.na(IabpWithoutHemoArtLacDt) ~ 
-                                       IabpWithoutHemoArtLac),
-    IabpWithoutHemoAst = case_when(!is.na(IabpWithoutHemoAstDt) ~ 
-                                       IabpWithoutHemoAst),
-    IabpWithoutHemoAlt = case_when(!is.na(IabpWithoutHemoAltDt) ~ 
-                                       IabpWithoutHemoAlt)) %>% 
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, JustId, unique_event, unique_date, McsdCardiacIndex, 
-         McsdCapWedgePressure, McsdSystolicBloodPressure, McsdWithoutHemoSbp, 
-         McsdWithoutHemoArtLac, McsdWithoutHemoAst, 
-         IabpCardiacIndex, IabpCapWedgePressure, IabpSystolicBloodPressure,
-         IabpWithoutHemoSbp, IabpWithoutHemoArtLac, IabpWithoutHemoAst,
-         IabpWithoutHemoAlt)
-
-just_stat3 <- just_stat3 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  mutate(
-    ChangeDt = ChangeDate) %>% 
-  pivot_longer(cols = ends_with("Dt"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  mutate(
-    InoCardiacIndex = case_when(!is.na(InoCardiacIndexDt) ~ InoCardiacIndex),
-    InoCapWedgePressure = case_when(!is.na(InoCapWedgePressureDt) ~ 
-                                      InoCapWedgePressure),
-    InoSysBloodPressure = case_when(!is.na(InoSysBloodPressureDt) ~ 
-                                      InoSysBloodPressure),
-    McsdWithRhfPcwp = case_when(!is.na(McsdWithRhfPcwpDt) ~ 
-                                      McsdWithRhfPcwp),
-    McsdWithRhfVenPressure = case_when(!is.na(McsdWithRhfVenPressureDt) ~ 
-                                      McsdWithRhfVenPressure)) %>% 
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, JustId, unique_event, unique_date, InoCardiacIndex,
-         InoCapWedgePressure, InoSysBloodPressure, McsdLactateDehydrogenase,
-         McsdPlasmaFreeHemoglobin, McsdHemoglobinuria,
-         McsdWithPumpTransIscAttack, McsdWithRhfPcwp, McsdWithRhfVenPressure, 
-         MucosalBleedNumHosp)
-
-just_stat4 <- just_stat4 %>%
-  distinct(across(-JustId), .keep_all = TRUE) %>% 
-  mutate(ChangeDt = ChangeDate) %>%
-  pivot_longer(cols = ends_with("Dt"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  mutate(
-    InotropeCardiacIndex = case_when(!is.na(InotropeCardiacIndexDt) ~ 
-                                       InotropeCardiacIndex),
-    InotropePcwp = case_when(!is.na(InotropePcwpDt) ~ 
-                                       InotropePcwp)) %>% 
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, JustId, unique_event, unique_date, 
-         InotropeCardiacIndex, InotropePcwp)
-
-just_all_stat <- just_stat1 %>% 
-  full_join(just_stat2, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
-  full_join(just_stat3, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
-  full_join(just_stat4, by = c("PX_ID", "unique_event", "unique_date", "JustId"))
-  
-# full join on common variables
-full_list <- full_list %>% 
-  full_join(just_all_stat, by = c("PX_ID", "unique_event", "unique_date")) %>% 
-  
-  # # justification forms have date-times instead of dates, so converting to date
-  # mutate(unique_date = floor_date(unique_date, unit = "day")) %>%
-  
-  # # TODO: fix bug that does not combine all events (see PX_ID = 1238278, 1238293)
-  # # combines events if events happened on the same day
-  group_by(PX_ID, unique_date) %>%
-  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-
-  # removes redundant rows after combining events above
-  group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:last_col(), .direction = "downup") %>%
-  distinct() %>%
-  
-  # arranges dataset by PX_ID and event date for easy viewing
-  arrange(PX_ID, unique_date) %>% 
-  ungroup()
+# just_stat1 <- just_stat1 %>% 
+#   distinct(across(-JustId), .keep_all = TRUE) %>%
+#   mutate(ChangeDt = ChangeDate) %>% 
+#   pivot_longer(cols = ends_with("Dt"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   mutate(
+#     EcmoSystolicBloodPressure = case_when(!is.na(EcmoSystolicBloodPressureDt) ~
+#                                             EcmoSystolicBloodPressure),
+#     EcmoCardiacIndex = case_when(!is.na(EcmoCardiacIndexDt) ~
+#                                    EcmoCardiacIndex),
+#     EcmoCapWedgePressure = case_when(!is.na(EcmoCapWedgePressureDt) ~
+#                                    EcmoCapWedgePressure),
+#     EcmoWithoutHemoSbp = case_when(!is.na(EcmoWithoutHemoSbpDt) ~
+#                                    EcmoWithoutHemoSbp),
+#     EcmoWithoutHemoArtLac = case_when(!is.na(EcmoWithoutHemoArtLacDt) ~
+#                                    EcmoWithoutHemoArtLac),
+#     EcmoWithoutHemoAst = case_when(!is.na(EcmoWithoutHemoAstDt) ~
+#                                    EcmoWithoutHemoAst),
+#     EcmoWithoutHemoAlt = case_when(!is.na(EcmoWithoutHemoAltDt) ~
+#                                    EcmoWithoutHemoAlt)) %>% 
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, JustId, unique_event, unique_date, 
+#          EcmoSystolicBloodPressure, EcmoCardiacIndex, 
+#          EcmoCapWedgePressure, EcmoWithoutHemoSbp, EcmoWithoutHemoArtLac, 
+#          EcmoWithoutHemoAst, EcmoWithoutHemoAlt)
+# 
+# just_stat2 <- just_stat2 %>% 
+#   distinct(across(-JustId), .keep_all = TRUE) %>%
+#   mutate(ChangeDt = ChangeDate) %>% 
+#   pivot_longer(cols = ends_with("Dt"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   mutate(
+#     McsdCardiacIndex = case_when(!is.na(McsdCardiacIndexDt) ~ McsdCardiacIndex),
+#     McsdCapWedgePressure = case_when(!is.na(McsdCapWedgePressureDt) ~ 
+#                                        McsdCapWedgePressure),
+#     McsdSystolicBloodPressure = case_when(!is.na(McsdSystolicBloodPressureDt) ~ 
+#                                        McsdSystolicBloodPressure),
+#     McsdWithoutHemoSbp = case_when(!is.na(McsdWithoutHemoSbpDt) ~ 
+#                                        McsdWithoutHemoSbp),
+#     McsdWithoutHemoArtLac = case_when(!is.na(McsdWithoutHemoArtLacDt) ~ 
+#                                        McsdWithoutHemoArtLac),
+#     McsdWithoutHemoAst = case_when(!is.na(McsdWithoutHemoAstDt) ~ 
+#                                        McsdWithoutHemoAst),
+#     IabpCardiacIndex = case_when(!is.na(IabpCardiacIndexDt) ~ 
+#                                        IabpCardiacIndex),
+#     IabpCapWedgePressure = case_when(!is.na(IabpCapWedgePressureDt) ~ 
+#                                        IabpCapWedgePressure),
+#     IabpSystolicBloodPressure = case_when(!is.na(IabpSystolicBloodPressureDt) ~ 
+#                                        IabpSystolicBloodPressure),
+#     IabpWithoutHemoSbp = case_when(!is.na(IabpWithoutHemoSbpDt) ~ 
+#                                        IabpWithoutHemoSbp),
+#     IabpWithoutHemoArtLac = case_when(!is.na(IabpWithoutHemoArtLacDt) ~ 
+#                                        IabpWithoutHemoArtLac),
+#     IabpWithoutHemoAst = case_when(!is.na(IabpWithoutHemoAstDt) ~ 
+#                                        IabpWithoutHemoAst),
+#     IabpWithoutHemoAlt = case_when(!is.na(IabpWithoutHemoAltDt) ~ 
+#                                        IabpWithoutHemoAlt)) %>% 
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, JustId, unique_event, unique_date, McsdCardiacIndex, 
+#          McsdCapWedgePressure, McsdSystolicBloodPressure, McsdWithoutHemoSbp, 
+#          McsdWithoutHemoArtLac, McsdWithoutHemoAst, 
+#          IabpCardiacIndex, IabpCapWedgePressure, IabpSystolicBloodPressure,
+#          IabpWithoutHemoSbp, IabpWithoutHemoArtLac, IabpWithoutHemoAst,
+#          IabpWithoutHemoAlt)
+# 
+# just_stat3 <- just_stat3 %>% 
+#   distinct(across(-JustId), .keep_all = TRUE) %>%
+#   mutate(
+#     ChangeDt = ChangeDate) %>% 
+#   pivot_longer(cols = ends_with("Dt"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   mutate(
+#     InoCardiacIndex = case_when(!is.na(InoCardiacIndexDt) ~ InoCardiacIndex),
+#     InoCapWedgePressure = case_when(!is.na(InoCapWedgePressureDt) ~ 
+#                                       InoCapWedgePressure),
+#     InoSysBloodPressure = case_when(!is.na(InoSysBloodPressureDt) ~ 
+#                                       InoSysBloodPressure),
+#     McsdWithRhfPcwp = case_when(!is.na(McsdWithRhfPcwpDt) ~ 
+#                                       McsdWithRhfPcwp),
+#     McsdWithRhfVenPressure = case_when(!is.na(McsdWithRhfVenPressureDt) ~ 
+#                                       McsdWithRhfVenPressure)) %>% 
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, JustId, unique_event, unique_date, InoCardiacIndex,
+#          InoCapWedgePressure, InoSysBloodPressure, McsdLactateDehydrogenase,
+#          McsdPlasmaFreeHemoglobin, McsdHemoglobinuria,
+#          McsdWithPumpTransIscAttack, McsdWithRhfPcwp, McsdWithRhfVenPressure, 
+#          MucosalBleedNumHosp)
+# 
+# just_stat4 <- just_stat4 %>%
+#   distinct(across(-JustId), .keep_all = TRUE) %>% 
+#   mutate(ChangeDt = ChangeDate) %>%
+#   pivot_longer(cols = ends_with("Dt"),
+#                names_to = "event", 
+#                values_to = "date", 
+#                values_drop_na = TRUE) %>%
+#   arrange(date) %>% 
+#   group_by(date) %>% 
+#   mutate(unique_date = date) %>%
+#   group_by(PX_ID, date) %>% 
+#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
+#   pivot_wider(names_from = event, values_from = date) %>%
+#   mutate(
+#     InotropeCardiacIndex = case_when(!is.na(InotropeCardiacIndexDt) ~ 
+#                                        InotropeCardiacIndex),
+#     InotropePcwp = case_when(!is.na(InotropePcwpDt) ~ 
+#                                        InotropePcwp)) %>% 
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup() %>%
+#   select(PX_ID, JustId, unique_event, unique_date, 
+#          InotropeCardiacIndex, InotropePcwp)
+# 
+# just_all_stat <- just_stat1 %>% 
+#   full_join(just_stat2, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
+#   full_join(just_stat3, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
+#   full_join(just_stat4, by = c("PX_ID", "unique_event", "unique_date", "JustId"))
+#   
+# # full join on common variables
+# full_list <- full_list %>% 
+#   full_join(just_all_stat, by = c("PX_ID", "unique_event", "unique_date")) %>% 
+#   
+#   # # justification forms have date-times instead of dates, so converting to date
+#   # mutate(unique_date = floor_date(unique_date, unit = "day")) %>%
+#   
+#   # # TODO: fix bug that does not combine all events (see PX_ID = 1238278, 1238293)
+#   # # combines events if events happened on the same day
+#   group_by(PX_ID, unique_date) %>%
+#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+# 
+#   # removes redundant rows after combining events above
+#   group_by(PX_ID, unique_date) %>%
+#   fill(WL_ORG:last_col(), .direction = "downup") %>%
+#   distinct() %>%
+#   
+#   # arranges dataset by PX_ID and event date for easy viewing
+#   arrange(PX_ID, unique_date) %>% 
+#   ungroup()
 ```
 
 # 9. Pivot risk stratification data by date, then join with full_list
@@ -763,7 +770,7 @@ risk_strat <- risk_strat %>%
                values_drop_na = TRUE) %>%
   
   group_by(date) %>% 
-  mutate(unique_date = date, PX_ID = px_id) %>%
+  mutate(unique_date = date) %>%
   group_by(PX_ID, date) %>% 
   mutate(unique_event = str_c(event, collapse = ",")) %>% 
   pivot_wider(names_from = event, values_from = date) %>% 
@@ -896,6 +903,7 @@ full_list <- full_list %>%
 
 full_list <- full_list %>%
   ungroup() %>% 
+  mutate(t_start = 0, t_stop = 0) %>% 
   arrange(PX_ID, unique_date)
 
 for (i in 2:nrow(full_list)) {
@@ -918,5 +926,8 @@ for (i in 2:nrow(full_list)) {
       
   }
 }
+
+full_list <- full_list %>% 
+  select(PX_ID, unique_event, unique_date, t_start, t_stop, WL_ORG:last_col())
 
 ```
