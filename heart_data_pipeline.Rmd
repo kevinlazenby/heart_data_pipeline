@@ -122,7 +122,7 @@ just_form_hr <- just_form_hr %>% select(-ChangeDate) %>%
   full_join(just_form_hr_data_link %>% select(-ChangeDate), by = "JustId") %>%
   
   # join status episode information by JustId
-  full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")  
+  # full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")  
   
   # device info appears to be full of duplicates and errors
   # # join device information by DeviceId
