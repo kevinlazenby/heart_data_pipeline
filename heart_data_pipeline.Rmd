@@ -32,6 +32,7 @@ library(readr)
 library(lubridate)
 library(boxr)
 library(zoo)
+library(labelled)
 
 here::i_am("heart_data_pipeline.Rmd")
 ```
@@ -109,42 +110,66 @@ table_descriptions <-
 ```{r link data sets}
 
 risk_strat_data_hr <- risk_strat_data_hr %>% 
-  full_join(just_form_hr_data_link, by = c("WlregAuditId", "ChangeDate"))
-
-just_form_hr_data_link <- just_form_hr_data_link %>% 
-  full_join(risk_strat_data_hr %>% 
-              select(WlregAuditId, JustId, ChangeDate, px_id),
-            by = c("WlregAuditId", "JustId", "ChangeDate")) %>% 
+  mutate(ChangeDt = floor_date(ChangeDate, unit = "day")) %>%
+  select(-ChangeDate) %>% 
+  full_join(just_form_hr_data_link %>%
+              select(-ChangeDate, -InitialFormJustId), by = "WlregAuditId") %>% 
   mutate(PX_ID = px_id) %>% 
-  select(-px_id)
+  select(-px_id) %>%
+  
+  # removes 134 entries that have valid WlregAuditId but missing JustId
+  filter(!is.na(JustId)) %>% 
+  select(-RiskStratId, -WlregAuditId, ChangeUserId, ChangeRequestorId)
 
-just_form_hr <- just_form_hr %>% select(-ChangeDate) %>% 
-  full_join(just_form_hr_data_link %>% select(-ChangeDate), by = "JustId") %>%
+just_form_hr_data_link <- just_form_hr_data_link %>%
+  select(-ChangeDate) %>% 
+  full_join(risk_strat_data_hr %>% 
+              select(ChangeDt, JustId, PX_ID), by = "JustId")
+
+just_form_hr <- just_form_hr %>% 
+  select(JustId, RequestedCandStatCd, RequestedCandStat_descrip,
+         ExtensionNumber, Exception, ThorSupportDevicePrimary,
+         ThorSupportDeviceSecondary, descrip, AdmittedToHospital) %>%
+  mutate(listing_description = descrip) %>% 
+  select(-descrip) %>% 
+  full_join(just_form_hr_data_link %>% 
+              select(-WlregAuditId, -InitialFormJustId), by = "JustId") %>% 
   
-  # join status episode information by JustId
-  full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")  
+  # join device information by DeviceId
+  left_join(thor_support_device %>% 
+              select(DeviceId, VadBrandId, TahBrandId, PercuBrandId, ImplantDt),
+            by = c("ThorSupportDevicePrimary" = "DeviceId")) %>% 
+  select(-ThorSupportDevicePrimary, -ThorSupportDeviceSecondary)
   
-  # device info appears to be full of duplicates and errors
-  # # join device information by DeviceId
-  # left_join(thor_support_device %>% select(DeviceId:OtherSpecify),
-  #           by = c("ThorSupportDevicePrimary" = "DeviceId")) %>% 
-  
-  # # can pipe in this code to include secondary VADs
-  # left_join(thor_support_device %>% select(DeviceId:OtherSpecify),
+  # can pipe in this code to include secondary VAD info from thor_support_device
+  # left_join(thor_support_device %>% 
+  #             select(DeviceId, VadBrandId, TahBrandId, PercuBrandId, ImplantDt),
   #           by = c("ThorSupportDeviceSecondary" = "DeviceId"),
   #           suffix = c(".primary", ".secondary"))
+  
+  # status_just_episode provides same info as stathist_thor, so not including it
+  # # join status episode information by JustId
+  # full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId") 
 
-just_form_hr_stat1 <- just_form_hr_stat1 %>% 
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
+just_form_hr_stat1 <- just_form_hr_stat1 %>%
+  select(-ChangeDate) %>% 
+  left_join(just_form_hr_data_link %>% 
+              select(JustId, PX_ID, ChangeDt), by = "JustId")
 
 just_form_hr_stat2 <- just_form_hr_stat2 %>% 
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
+  select(-ChangeDate) %>%
+  left_join(just_form_hr_data_link %>% 
+              select(JustId, PX_ID, ChangeDt), by = "JustId")
 
 just_form_hr_stat3 <- just_form_hr_stat3 %>% 
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
+  select(-ChangeDate) %>%
+  left_join(just_form_hr_data_link %>%
+              select(JustId, PX_ID, ChangeDt), by = "JustId")
 
 just_form_hr_stat4 <- just_form_hr_stat4 %>% 
-  left_join(just_form_hr_data_link %>% select(JustId, PX_ID), by = "JustId")
+  select(-ChangeDate) %>%
+  left_join(just_form_hr_data_link %>% 
+              select(JustId, PX_ID, ChangeDt), by = "JustId")
 
 ```
 
@@ -181,8 +206,7 @@ if (include_multi_organ_recipients == FALSE) {
 tx_list <- tx_hr %>% filter(PX_ID %in% cand_list$PX_ID)
 
 # filter risk stratification data
-risk_strat <- risk_strat_data_hr %>% 
-  mutate(PX_ID = px_id) %>% select(-px_id) %>%
+risk_strat <- risk_strat_data_hr %>%
   filter(PX_ID %in% cand_list$PX_ID)
 
 # filter status history file
@@ -277,7 +301,7 @@ tx_list <- tx_list %>%
   distinct() %>% 
   select(PX_ID, ORG_TY, REC_TX_DT, REC_POSTX_LOS, REC_A_MM_EQUIV_TX,
                      REC_B_MM_EQUIV_TX, REC_DR_MM_EQUIV_TX, REC_DGN, REC_CTR_CD,
-                     REC_CTR_TY, REC_PX_STAT, REC_PX_STAT_DT,
+                     REC_CTR_TY, REC_PX_STAT,
                      REC_DISCHRG_DT, REC_ADMISSION_DT, REC_MED_COND, 
                      REC_FUNCTN_STAT, REC_PRIMARY_PAY, REC_HGT_CM, REC_WGT_KG,
                      REC_BMI, REC_HIV_STAT, REC_CMV_STAT, REC_HCV_STAT,
@@ -332,19 +356,19 @@ full_list <- cand_list %>%
   # full join by common variables, thus no need for suffix
   full_join(tx_list, by = c("PX_ID", "unique_date", "unique_event")) %>% 
   
-  # combines events if events in cand_list and tx_list happened on the same day
-  group_by(PX_ID, unique_date) %>% 
-  mutate(unique_event = str_c(unique_event, collapse = ",")) %>% 
-  
-  # removes redundant rows after combining events above
-  group_by(PX_ID, unique_date) %>% 
-  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>% 
-  distinct() %>% 
-  
-  # fills in missing values for each candidate, since all vars in cand_list and
-  # tx_list do not have multiple values across time
-  group_by(PX_ID) %>% 
-  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+  # # combines events if events in cand_list and tx_list happened on the same day
+  # group_by(PX_ID, unique_date) %>% 
+  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>% 
+  # 
+  # # removes redundant rows after combining events above
+  # group_by(PX_ID, unique_date) %>% 
+  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>% 
+  # distinct() %>% 
+  # 
+  # # fills in missing values for each candidate, since all vars in cand_list and
+  # # tx_list do not have multiple values across time
+  # group_by(PX_ID) %>% 
+  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
   
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>% 
@@ -379,24 +403,24 @@ full_list <- full_list %>%
   # full join by common variables, thus no need for suffix
   full_join(stathist, by = c("PX_ID", "unique_date", "unique_event")) %>% 
   
-  # combines events if events happened on the same day
-  group_by(PX_ID, unique_date) %>%
-  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-
-  # removes redundant rows after combining events above
-  group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:CANHX_REASON_STAT_INACT, .direction = "downup") %>%
-  distinct() %>%
-  
-  # fills in missing values for each candidate, since all vars in cand_list and
-  # tx_list do not have multiple values across time
-  group_by(PX_ID) %>% 
-  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
-
-  # fills in missing status code for each candidate, but only fills down to 
-  # preserve changes in status over time (similar/same mechanism as na.locf)
-  group_by(PX_ID) %>%
-  fill(CANHX_STAT_CD, .direction = "down") %>%
+  # # combines events if events happened on the same day
+  # group_by(PX_ID, unique_date) %>%
+  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+  # 
+  # # removes redundant rows after combining events above
+  # group_by(PX_ID, unique_date) %>%
+  # fill(WL_ORG:CANHX_REASON_STAT_INACT, .direction = "downup") %>%
+  # distinct() %>%
+  # 
+  # # fills in missing values for each candidate, since all vars in cand_list and
+  # # tx_list do not have multiple values across time
+  # group_by(PX_ID) %>% 
+  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+  # 
+  # # fills in missing status code for each candidate, but only fills down to 
+  # # preserve changes in status over time (similar/same mechanism as na.locf)
+  # group_by(PX_ID) %>%
+  # fill(CANHX_STAT_CD, .direction = "down") %>%
   
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>% 
@@ -410,33 +434,29 @@ full_list <- full_list %>%
 
 just_form <- just_form %>% 
   distinct(across(-JustId), .keep_all = TRUE) %>%
-  mutate(status_description = descrip, BeginDt = BeginDate, EndDt = EndDate) %>%
-  select(-descrip, -BeginDate, -EndDate, -EndDt, -ChangeDate) %>% 
+  mutate(status_description = descrip) %>%
+  select(-descrip) %>% 
   select(PX_ID, JustId, RequestedCandStatCd, ExtensionNumber, Exception,
          status_description:last_col())
 
 just_stat1 <- just_stat1 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  select(-ChangeDate)
+  distinct(across(-JustId), .keep_all = TRUE)
 
 just_stat2 <- just_stat2 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  select(-ChangeDate)
+  distinct(across(-JustId), .keep_all = TRUE)
 
 just_stat3 <- just_stat3 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  select(-ChangeDate)
+  distinct(across(-JustId), .keep_all = TRUE)
 
 just_stat4 <- just_stat4 %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  select(-ChangeDate)
+  distinct(across(-JustId), .keep_all = TRUE)
 
 risk_strat <- risk_strat %>% 
   distinct(across(-WlregAuditId), .keep_all = TRUE) %>%
-  select(-ChangeDate, ChangeUserId, ChangeRequestorId)
+  select(-ChangeUserId, -ChangeRequestorId, -WlregAuditId, -RiskStratId)
 
 combined_just_forms <- just_form %>%
-  full_join(risk_strat, by = "PX_ID")
+  full_join(risk_strat, by = c("JustId", "PX_ID")) %>% 
   full_join(just_stat1, by = c("JustId", "PX_ID")) %>% 
   full_join(just_stat2, by = c("JustId", "PX_ID"),
             suffix = c(".stat1", ".stat2")) %>%
@@ -453,8 +473,8 @@ combined_just_forms <- just_form %>%
   arrange(date) %>% 
   group_by(date) %>% 
   mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  group_by(PX_ID, date) %>%
+  mutate(unique_event = str_c(event, collapse = ",")) %>%
   pivot_wider(names_from = event, values_from = date) %>%
   arrange(PX_ID, unique_date) %>% 
   ungroup() %>%
@@ -474,6 +494,16 @@ full_list <- full_list %>%
   group_by(PX_ID, unique_date) %>%
   fill(WL_ORG:ExtInotropeDopamine, .direction = "downup") %>%
   distinct() %>%
+
+  # fills in missing values for each candidate
+  group_by(PX_ID) %>%
+  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+
+  # fills in missing values for each candidate, but only fills down to
+  # preserve changes in status over time (similar/same mechanism as na.locf)
+  arrange(PX_ID, unique_date) %>% 
+  group_by(PX_ID) %>%
+  fill(CANHX_STAT_CD:ExtInotropeDopamine, .direction = "down") %>%
   
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>% 
@@ -763,7 +793,6 @@ full_list <- full_list %>%
 
 ```{r pivot risk strat data}
 risk_strat <- risk_strat %>%
-  mutate(ChangeDt = ChangeDate) %>%
   pivot_longer(cols = ends_with("Dt"),
                names_to = "event", 
                values_to = "date", 
@@ -811,7 +840,7 @@ risk_strat <- risk_strat %>%
   arrange(PX_ID, unique_date) %>% 
   ungroup() %>% 
   
-  select(PX_ID, RiskStratId, ChangeDate, unique_date, unique_event, 
+  select(PX_ID, RiskStratId, unique_date, unique_event, 
          CandHistNumSternotomies, CandHistStroke, CandHistThromb,
          CandHistNumHospAdmn, CurrTherOnLoopDiuretic, CurrTherVasoactiveSupport,
          CurrTherAntiArrhythmics, CurrTherPulVas, CurrTherOnDialysis,
@@ -931,3 +960,34 @@ full_list <- full_list %>%
   select(PX_ID, unique_event, unique_date, t_start, t_stop, WL_ORG:last_col())
 
 ```
+
+```{r}
+
+var_label(example_list) <- list(HemoSbp = "Systolic blood pressure",
+                                      HemoDbp = "Diastolic blood pressure",
+                                      HemoPasp = "Pulmonary Artery\nSystolic blood pressure",
+                                      HemoMeanPressure = "Mean pulmonary artery pressure",
+                                      HemoPadp = "Pulmonary Artery Diastolic BP")
+
+example_list_pivot <- example_list %>% filter(PX_ID == 1248356) %>% select(-HemoCvp, -HemoPcwp) %>% pivot_longer(-(PX_ID:status_description), names_to = "variable", values_to = "pressure", values_drop_na = TRUE)
+
+poster_figure <- ggplot(data = example_list_pivot, aes(x = unique_date, y = pressure)) +
+  geom_line(aes(color = variable), size = 1) +
+  geom_label(data = example_list_pivot %>% 
+               filter(pressure > 88), aes(label = factor(status_description)), nudge_y = 5, alpha = 0.5, size = 8) +
+  labs(
+    x = "Date of measurement",
+    y = "Pressure (mm Hg)",
+    color = "Hemodynamic Measurement") +
+  scale_color_discrete(breaks = c("HemoSbp", "HemoDbp", "HemoPasp", "HemoMeanPressure", "HemoPadp"),
+                       labels = c("Systolic blood pressure", "Diastolic blood pressure",
+                                  "Pulmonary artery\nsystolic blood pressure",
+                                  "Mean pulmonary artery pressure",
+                                  "Pulmonary artery\ndiastolic blood pressure")) +
+  scale_x_datetime(date_breaks = "2 days", date_labels = "%B %d", expand = expansion(mult = 0.1)) +
+  theme(legend.text=element_text(size=20), legend.title = element_text(size=24),
+        axis.title = element_text(size=24), axis.text = element_text(size=24))
+
+poster_figure
+```
+
