@@ -118,38 +118,62 @@ risk_strat_data_hr <- risk_strat_data_hr %>%
   select(-px_id) %>%
   
   # removes 134 entries that have valid WlregAuditId but missing JustId
-  filter(!is.na(JustId)) %>% 
-  select(-RiskStratId, -WlregAuditId, ChangeUserId, ChangeRequestorId)
+  filter(!is.na(JustId)) %>%
+  
+  # there are 732 times that two just. forms were submitted on the same day for a
+  # single PX_ID. The time step in this process is one day, so these are removed
+  group_by(PX_ID, ChangeDt) %>% slice_max(JustId) %>% 
+  ungroup() %>% 
+  
+  select(-RiskStratId, -WlregAuditId, -ChangeUserId, -ChangeRequestorId,
+         -HemoDataObtained, -HemoDataObtainedOther, -HemoPcwpOrLvedp) %>% 
+  select(-(ends_with("St"))) %>% 
+  select(-(starts_with("CandHist"))) %>%
+  select(-(starts_with("SenData"))) %>%
+  select(-(starts_with("CurrTher"))) %>%
+  select(-(ends_with("Type"))) %>%
+  select(-(ends_with("Perf"))) %>%
+  relocate(ChangeDt:PX_ID)
 
+# right_join to filter out erroneous forms, as above
 just_form_hr_data_link <- just_form_hr_data_link %>%
   select(-ChangeDate) %>% 
-  full_join(risk_strat_data_hr %>% 
+  right_join(risk_strat_data_hr %>% 
               select(ChangeDt, JustId, PX_ID), by = "JustId")
 
+# right_join to filter out erroneous forms, as above
 just_form_hr <- just_form_hr %>% 
   select(JustId, RequestedCandStatCd, RequestedCandStat_descrip,
          ExtensionNumber, Exception, ThorSupportDevicePrimary,
          ThorSupportDeviceSecondary, descrip, AdmittedToHospital) %>%
   mutate(listing_description = descrip) %>% 
   select(-descrip) %>% 
-  full_join(just_form_hr_data_link %>% 
-              select(-WlregAuditId, -InitialFormJustId), by = "JustId") %>% 
-  
-  # join device information by DeviceId
-  left_join(thor_support_device %>% 
-              select(DeviceId, VadBrandId, TahBrandId, PercuBrandId, ImplantDt),
-            by = c("ThorSupportDevicePrimary" = "DeviceId")) %>% 
-  select(-ThorSupportDevicePrimary, -ThorSupportDeviceSecondary)
-  
-  # can pipe in this code to include secondary VAD info from thor_support_device
-  # left_join(thor_support_device %>% 
-  #             select(DeviceId, VadBrandId, TahBrandId, PercuBrandId, ImplantDt),
-  #           by = c("ThorSupportDeviceSecondary" = "DeviceId"),
-  #           suffix = c(".primary", ".secondary"))
-  
+  right_join(just_form_hr_data_link %>% 
+              select(-WlregAuditId, -InitialFormJustId), by = "JustId")
+
   # status_just_episode provides same info as stathist_thor, so not including it
   # # join status episode information by JustId
-  # full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId") 
+  # full_join(status_just_episode %>% select(JustId:EndDate), by = "JustId")
+
+# thor_support_device seems to include many duplicates, include at your own risk
+# thor_support_device <- thor_support_device %>%
+# 
+#   select(DeviceId, VadBrandId, TahBrandId, PercuBrandId, ImplantDt) %>%
+# 
+#   # join device information by DeviceId
+#   left_join(just_form_hr %>% select(ThorSupportDevicePrimary, PX_ID),
+#             by = c("DeviceId" = "ThorSupportDevicePrimary")) %>%
+#   select(-DeviceId) %>%
+#   distinct()
+#   
+#   
+#   # can pipe in this code to include secondary VAD info from thor_support_device
+#   # left_join(just_form_hr %>% select(ThorSupportDeviceSecondary, PX_ID),
+#   #           by = c("DeviceId" = "ThorSupportDeviceSecondary"),
+#   #           suffix = c(".primary", ".secondary"))
+
+just_form_hr <- just_form_hr %>% 
+  select(-ThorSupportDevicePrimary, -ThorSupportDeviceSecondary)
 
 just_form_hr_stat1 <- just_form_hr_stat1 %>%
   select(-ChangeDate) %>% 
@@ -214,6 +238,9 @@ stathist <- stathist_thor %>% filter(PX_ID %in% cand_list$PX_ID)
 # filter common justification form file
 just_form <- just_form_hr %>% filter(PX_ID %in% cand_list$PX_ID)
 
+# filter support device file
+# support_device <- thor_support_device %>% filter(PX_ID %in% cand_list$PX_ID)
+
 # filter data linking dataframe
 data_link <- just_form_hr_data_link %>% filter(PX_ID %in% cand_list$PX_ID)
 
@@ -242,24 +269,23 @@ rm(cand_thor, tx_hr, risk_strat_data_hr, stathist_thor, just_form_hr,
 
 ```
 
-# 4. Pivot cand_list and tx_list by date, then full_join to create full_list
+# 4. Pivot cand_list and stathist by date, then full_join to create full_list
 
-```{r}
+```{r pivot cand_list and stathist}
 
-# this block selects the 47 variables in cand_thor currently used in analysis
+# this block selects the 45 variables from cand_thor currently used in analysis
 cand_list <- cand_list %>% 
   select(
-    PX_ID, WL_ORG, CAN_GENDER, CAN_ABO, CAN_RACE, PERS_SSA_DEATH_DT,
-    PERS_OPTN_DEATH_DT, PERS_RESTRICT_DEATH_DT, CAN_LISTING_DT, CAN_REM_DT,
+    PX_ID, WL_ORG, CAN_GENDER, CAN_ABO, CAN_RACE, CAN_LISTING_DT, CAN_REM_DT,
     CAN_REM_CD, CAN_DGN, CAN_ECMO, CAN_VENTILATOR, CAN_IABP, CAN_IV_INOTROP,
     CAN_VAD_TY, CAN_VAD1, CAN_PRIMARY_PAY, CAN_HGT_CM, CAN_WGT_KG, CAN_BMI,
     CAN_DIAB_TY, CAN_DIAL, CAN_CEREB_VASC, CAN_MOST_RECENT_CREAT,
     CAN_TOT_ALBUMIN, CAN_IMPLANT_DEFIB, CAN_PULM_ART_MEAN, CAN_PCW_MEAN,
     CAN_CARDIAC_OUTPUT, CAN_HIST_CIGARETTE, CAN_MALIG, CAN_LAST_STAT,
-    CAN_AGE_IN_MONTHS_AT_LISTING, CAN_LAST_ACT_STAT_DT, CAN_LAST_INACT_STAT_DT,
-    CAN_INIT_STAT, CAN_ANGINA, CAN_ANGINA_CAD, CAN_PEPTIC_ULCER, 
-    CAN_EXERCISE_O2, CAN_DRUG_TREAT_HYPERTEN, CAN_PERIPH_VASC, CAN_ANTI_ARRYTHM,
-    CAN_OTHER_TOBACCO_USE, CAN_PULM_EMBOL)
+    CAN_AGE_IN_MONTHS_AT_LISTING, CAN_INIT_STAT, CAN_ANGINA, CAN_ANGINA_CAD, 
+    CAN_PEPTIC_ULCER, CAN_EXERCISE_O2, CAN_DRUG_TREAT_HYPERTEN, CAN_PERIPH_VASC,
+    CAN_ANTI_ARRYTHM, CAN_OTHER_TOBACCO_USE, CAN_PULM_EMBOL,
+    PERS_SSA_DEATH_DT, PERS_OPTN_DEATH_DT, PERS_RESTRICT_DEATH_DT)
 
 cand_list_missing_data_check <- tibble(
   pct_missing = vector(mode = "double", length = ncol(cand_list)),
@@ -288,32 +314,82 @@ cand_list <- cand_list %>%
   group_by(date) %>% 
   mutate(unique_date = date) %>%
   group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  mutate(unique_event = event) %>% 
+  # mutate(unique_event = str_c(event, collapse = ",")) %>% 
   pivot_wider(names_from = event, values_from = date) %>% 
   arrange(PX_ID, unique_date) %>% 
   ungroup() %>%
   select(PX_ID, unique_event, unique_date, 
          WL_ORG:CAN_PULM_EMBOL)
 
+# perform same pivoting operation as above with stathist
+stathist <- stathist %>% 
+  select(PX_ID, CANHX_BEGIN_DT, CANHX_STAT_CD, 
+         CANHX_REASON_STAT_INACT) %>% 
+  pivot_longer(cols = ends_with("DT"),
+               names_to = "event", 
+               values_to = "date", 
+               values_drop_na = TRUE) %>%
+  arrange(date) %>% 
+  group_by(date) %>% 
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>% 
+  mutate(unique_event = event) %>% 
+  # mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  pivot_wider(names_from = event, values_from = date) %>%
+  arrange(PX_ID, unique_date) %>% 
+  ungroup() %>%
+  select(PX_ID, unique_event, unique_date, CANHX_STAT_CD, 
+         CANHX_REASON_STAT_INACT)
+
+full_list <- cand_list %>% 
+  
+  # full join by common variables, thus no need for suffix
+  full_join(stathist, by = c("PX_ID", "unique_date", "unique_event")) %>% 
+  relocate(CANHX_STAT_CD:CANHX_REASON_STAT_INACT, .after = unique_date) %>% 
+  
+  # combines events if events happened on the same day
+  group_by(PX_ID, unique_date) %>%
+  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+
+  # removes redundant rows after combining events above
+  group_by(PX_ID, unique_date) %>%
+  fill(CANHX_STAT_CD:CAN_PULM_EMBOL, .direction = "downup") %>%
+  distinct() %>%
+
+  # fills in missing values for each candidate, since all vars in cand_list and
+  # tx_list do not have multiple values across time
+  group_by(PX_ID) %>%
+  fill(WL_ORG:CAN_PULM_EMBOL, .direction = "downup") %>%
+
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>% 
+  ungroup()
+  
+```
+
+# 5. Pivot tx_list by date, then join with full_list
+
+```{r pivot tx_list}
+
 # repeat the same process as above with tx_list dataset
 tx_list <- tx_list %>% 
   distinct() %>% 
   select(PX_ID, ORG_TY, REC_TX_DT, REC_POSTX_LOS, REC_A_MM_EQUIV_TX,
-                     REC_B_MM_EQUIV_TX, REC_DR_MM_EQUIV_TX, REC_DGN, REC_CTR_CD,
-                     REC_CTR_TY, REC_PX_STAT,
-                     REC_DISCHRG_DT, REC_ADMISSION_DT, REC_MED_COND, 
-                     REC_FUNCTN_STAT, REC_PRIMARY_PAY, REC_HGT_CM, REC_WGT_KG,
-                     REC_BMI, REC_HIV_STAT, REC_CMV_STAT, REC_HCV_STAT,
-                     REC_EBV_STAT, REC_LIFE_SUPPORT, REC_ECMO,
-                     REC_IABP, REC_PGE, REC_INOTROP, REC_VENTILATOR, REC_VAD1,
-                     REC_VAD2, REC_CREAT, REC_TOT_BILI, REC_CHRONIC_STEROIDS,
-                     REC_TXFUS, REC_INFECT_IV_DRUG, REC_DIAL, 
-                     REC_VENTILATOR_SUPPORT, REC_HR_ISCH, REC_POSTX_STROKE,
-                     REC_POSTX_DIAL, REC_POSTX_PACEMAKER,
-                     REC_ACUTE_REJ_EPISODE, REC_CTR_ID, REC_AGE_IN_MONTHS_AT_TX,
-                     REC_A1, REC_A2, REC_B1, REC_B2, REC_DR1, REC_DR2,
-                     TFL_LASTATUS, TFL_GRAFT_DT, TFL_DEATH_DT, PERS_RETX,
-                     TFL_LAFUDATE, REC_MM_EQUIV_TX)
+         REC_B_MM_EQUIV_TX, REC_DR_MM_EQUIV_TX, REC_DGN, REC_CTR_CD,
+         REC_CTR_TY, REC_DISCHRG_DT, REC_ADMISSION_DT, REC_MED_COND, 
+         REC_FUNCTN_STAT, REC_PRIMARY_PAY, REC_HGT_CM, REC_WGT_KG,
+         REC_BMI, REC_HIV_STAT, REC_CMV_STAT, REC_HCV_STAT,
+         REC_EBV_STAT, REC_LIFE_SUPPORT, REC_ECMO,
+         REC_IABP, REC_PGE, REC_INOTROP, REC_VENTILATOR, REC_VAD1,
+         REC_VAD2, REC_CREAT, REC_TOT_BILI, REC_CHRONIC_STEROIDS,
+         REC_TXFUS, REC_INFECT_IV_DRUG, REC_DIAL, 
+         REC_VENTILATOR_SUPPORT, REC_HR_ISCH, REC_POSTX_STROKE,
+         REC_POSTX_DIAL, REC_POSTX_PACEMAKER,
+         REC_ACUTE_REJ_EPISODE, REC_CTR_ID, REC_AGE_IN_MONTHS_AT_TX,
+         REC_A1, REC_A2, REC_B1, REC_B2, REC_DR1, REC_DR2,
+         TFL_LASTATUS, TFL_GRAFT_DT, TFL_DEATH_DT,
+         PERS_RETX, TFL_LAFUDATE, REC_MM_EQUIV_TX)
 
 tx_list_missing_data_check <- tibble(
   pct_missing = vector(mode = "double", length = ncol(tx_list)),
@@ -344,165 +420,31 @@ tx_list <- tx_list %>%
   group_by(date) %>% 
   mutate(unique_date = date) %>%
   group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  mutate(unique_event = event) %>% 
+  # mutate(unique_event = str_c(event, collapse = ",")) %>%  
   pivot_wider(names_from = event, values_from = date) %>% 
   arrange(PX_ID, unique_date) %>% 
   ungroup() %>% 
   select(PX_ID, unique_event, unique_date, ORG_TY:REC_MM_EQUIV_TX)
 
-full_list <- cand_list %>% 
+full_list <- full_list %>% 
   
   # full join by common variables, thus no need for suffix
   full_join(tx_list, by = c("PX_ID", "unique_date", "unique_event")) %>% 
   
-  # # combines events if events in cand_list and tx_list happened on the same day
-  # group_by(PX_ID, unique_date) %>% 
-  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>% 
-  # 
-  # # removes redundant rows after combining events above
-  # group_by(PX_ID, unique_date) %>% 
-  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>% 
-  # distinct() %>% 
-  # 
-  # # fills in missing values for each candidate, since all vars in cand_list and
-  # # tx_list do not have multiple values across time
-  # group_by(PX_ID) %>% 
-  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
-  
-  # arranges dataset for easy viewing
-  arrange(PX_ID, unique_date) %>% 
-  ungroup()
-  
-```
-
-# 5. Pivot stathist by date, then join with full_list
-
-```{r pivot stathist_thor}
-
-stathist <- stathist %>% 
-  select(PX_ID, CANHX_BEGIN_DT, CANHX_STAT_CD, 
-         CANHX_REASON_STAT_INACT) %>% 
-  pivot_longer(cols = ends_with("DT"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
-  pivot_wider(names_from = event, values_from = date) %>%
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, unique_event, unique_date, CANHX_STAT_CD, 
-         CANHX_REASON_STAT_INACT)
-
-full_list <- full_list %>% 
-  
-  # full join by common variables, thus no need for suffix
-  full_join(stathist, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-  
-  # # combines events if events happened on the same day
-  # group_by(PX_ID, unique_date) %>%
-  # mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-  # 
-  # # removes redundant rows after combining events above
-  # group_by(PX_ID, unique_date) %>%
-  # fill(WL_ORG:CANHX_REASON_STAT_INACT, .direction = "downup") %>%
-  # distinct() %>%
-  # 
-  # # fills in missing values for each candidate, since all vars in cand_list and
-  # # tx_list do not have multiple values across time
-  # group_by(PX_ID) %>% 
-  # fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
-  # 
-  # # fills in missing status code for each candidate, but only fills down to 
-  # # preserve changes in status over time (similar/same mechanism as na.locf)
-  # group_by(PX_ID) %>%
-  # fill(CANHX_STAT_CD, .direction = "down") %>%
-  
-  # arranges dataset for easy viewing
-  arrange(PX_ID, unique_date) %>% 
-  ungroup()
-
-```
-
-# 6. Join just forms with risk strat data, pivot combined dataset by date, then join with full_list
-
-```{r pivot just_form_hr}
-
-just_form <- just_form %>% 
-  distinct(across(-JustId), .keep_all = TRUE) %>%
-  mutate(status_description = descrip) %>%
-  select(-descrip) %>% 
-  select(PX_ID, JustId, RequestedCandStatCd, ExtensionNumber, Exception,
-         status_description:last_col())
-
-just_stat1 <- just_stat1 %>% 
-  distinct(across(-JustId), .keep_all = TRUE)
-
-just_stat2 <- just_stat2 %>% 
-  distinct(across(-JustId), .keep_all = TRUE)
-
-just_stat3 <- just_stat3 %>% 
-  distinct(across(-JustId), .keep_all = TRUE)
-
-just_stat4 <- just_stat4 %>% 
-  distinct(across(-JustId), .keep_all = TRUE)
-
-risk_strat <- risk_strat %>% 
-  distinct(across(-WlregAuditId), .keep_all = TRUE) %>%
-  select(-ChangeUserId, -ChangeRequestorId, -WlregAuditId, -RiskStratId)
-
-combined_just_forms <- just_form %>%
-  full_join(risk_strat, by = c("JustId", "PX_ID")) %>% 
-  full_join(just_stat1, by = c("JustId", "PX_ID")) %>% 
-  full_join(just_stat2, by = c("JustId", "PX_ID"),
-            suffix = c(".stat1", ".stat2")) %>%
-  full_join(just_stat3, by = c("JustId", "PX_ID"),
-            suffix = c(".stat2", ".stat3")) %>% 
-  full_join(just_stat4, by = c("JustId", "PX_ID"),
-            suffix = c(".stat3", ".stat4")) %>% 
-  
-  pivot_longer(cols = ends_with("Dt"),
-               names_to = "event", 
-               values_to = "date", 
-               values_drop_na = TRUE) %>%
-  
-  arrange(date) %>% 
-  group_by(date) %>% 
-  mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>%
-  mutate(unique_event = str_c(event, collapse = ",")) %>%
-  pivot_wider(names_from = event, values_from = date) %>%
-  arrange(PX_ID, unique_date) %>% 
-  ungroup() %>%
-  select(PX_ID, unique_event, unique_date, 
-         RequestedCandStatCd:ExtInotropeDopamine)
-
-full_list <- full_list %>% 
-  
-  # full join by common variables, thus no need for suffix
-  full_join(combined_just_forms, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-  
-  # combines events if events happened on the same day
+  # combines events if events in cand_list and tx_list happened on the same day
   group_by(PX_ID, unique_date) %>%
   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
 
   # removes redundant rows after combining events above
   group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:ExtInotropeDopamine, .direction = "downup") %>%
+  fill(CANHX_STAT_CD:REC_MM_EQUIV_TX, .direction = "downup") %>%
   distinct() %>%
 
-  # fills in missing values for each candidate
+  # fills in missing values for each candidate, which is safe because all vars
+  # in cand_list and tx_list only have a single value
   group_by(PX_ID) %>%
   fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
-
-  # fills in missing values for each candidate, but only fills down to
-  # preserve changes in status over time (similar/same mechanism as na.locf)
-  arrange(PX_ID, unique_date) %>% 
-  group_by(PX_ID) %>%
-  fill(CANHX_STAT_CD:ExtInotropeDopamine, .direction = "down") %>%
   
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>% 
@@ -510,318 +452,55 @@ full_list <- full_list %>%
 
 ```
 
-# 7. Pivot old policy justification forms by date, then join with full_list
+# 6. Join just_form and just_stat1-just_stat4 with risk_strat, pivot by date, then join with full_list
 
-```{r pivot old just forms}
+```{r pivot just_form and risk_strat}
 
-# just_stat1a <- just_stat1a %>% 
-#   
-#   # include only completed forms (small minority are excluded by this step)
-#   filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
-#   
-#   # remove duplicate forms
-#   distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
-#   
-#   select(PX_ID, CANHX_CHG_DT, CANHX_LAB_DT, CANHX_IABP_DT, CANHX_ECMO_DT, 
-#          CANHX_LVAD_DT, CANHX_VAD_IMPLANT_DT, CANHX_TAH_DT, CANHX_RVAD_DT, 
-#          CANHX_HEMO_DT, CAN_LISTING_CTR_ID, 
-#          CANHX_STAT_CD, CANHX_STAT_TY, CANHX_FORM_STAT, 
-# 	       CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
-# 	       CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B, 
-#          CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D, 
-#          CANHX_ADULT_CRITERIA_E, CANHX_INTRP_DOBU, CANHX_INTRP_DOPA, 
-#          CANHX_INTRP_MILRIN, CANHX_ADMITTED, CANHX_IABP, CANHX_ECMO, 
-#          CANHX_LVAD_TYPE, CANHX_VAD, CANHX_TAH, CANHX_RVAD_TYPE, 
-#          CANHX_CARD_OUTPUT, CANHX_HEMO_CI, CANHX_HEMO_INTRP_OBTAINED, 
-#          CANHX_HEMO_BSA, CANHX_HEMO_PCWP, CANHX_HEMO_MPAP,
-# 	       CANHX_DEV_MALFUNCTN, CANHX_DEV_VENT_ARRYTHM) %>%
-#   pivot_longer(cols = ends_with("DT"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, unique_event, unique_date, 
-#          CAN_LISTING_CTR_ID:last_col())
-# 
-# full_list <- full_list %>% 
-#   
-#   # full join by common variables, thus no need for suffix
-#   full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-#   
-#   # combines events if events happened on the same day
-#   group_by(PX_ID, unique_date) %>%
-#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-# 
-#   # removes redundant rows after combining events above
-#   group_by(PX_ID, unique_date) %>%
-#   fill(WL_ORG:CANHX_DEV_VENT_ARRYTHM, .direction = "downup") %>%
-#   distinct() %>%
-#   
-#   # arranges dataset for easy viewing
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup()
-# 
-# # repeat the same process as above with just_stat1b
-# just_stat1b <- just_stat1b %>% 
-#   
-#   # include only completed forms (small minority are excluded by this step)
-#   filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>% 
-#   
-#   # remove duplicate forms
-#   distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>% 
-#   
-#   mutate(low_dose_inotrope = 
-#            pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>% 
-#   
-#   select(PX_ID, CANHX_CHG_DT, CANHX_VAD_IMPLANT_DT, CAN_LISTING_CTR_ID, 
-#          CANHX_STAT_CD, CANHX_VAD, CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
-#   pivot_longer(cols = ends_with("DT"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, unique_event, unique_date, 
-#          CAN_LISTING_CTR_ID:last_col())
-# 
-# full_list <- full_list %>% 
-#   
-#   # full join by common variables, thus no need for suffix
-#   full_join(just_stat1b, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-#   
-#   # combines events if events happened on the same day
-#   group_by(PX_ID, unique_date) %>%
-#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-# 
-#   # removes redundant rows after combining events above
-#   group_by(PX_ID, unique_date) %>%
-#   fill(WL_ORG:last_col(), .direction = "downup") %>%
-#   distinct() %>%
-#   
-#   # arranges dataset for easy viewing
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup()
+just_stat1 <- just_stat1 %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>% 
+  mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day")))
 
-```
+just_stat2 <- just_stat2 %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>% 
+  mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day")))
 
-# 8. Pivot new policy justification forms by date, then join with full_list
+just_stat3 <- just_stat3 %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>% 
+  mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day")))
 
-```{r pivot new just forms}
+just_stat4 <- just_stat4 %>% 
+  distinct(across(-JustId), .keep_all = TRUE) %>% 
+  mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day")))
 
-# just_stat1 <- just_stat1 %>% 
-#   distinct(across(-JustId), .keep_all = TRUE) %>%
-#   mutate(ChangeDt = ChangeDate) %>% 
-#   pivot_longer(cols = ends_with("Dt"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   mutate(
-#     EcmoSystolicBloodPressure = case_when(!is.na(EcmoSystolicBloodPressureDt) ~
-#                                             EcmoSystolicBloodPressure),
-#     EcmoCardiacIndex = case_when(!is.na(EcmoCardiacIndexDt) ~
-#                                    EcmoCardiacIndex),
-#     EcmoCapWedgePressure = case_when(!is.na(EcmoCapWedgePressureDt) ~
-#                                    EcmoCapWedgePressure),
-#     EcmoWithoutHemoSbp = case_when(!is.na(EcmoWithoutHemoSbpDt) ~
-#                                    EcmoWithoutHemoSbp),
-#     EcmoWithoutHemoArtLac = case_when(!is.na(EcmoWithoutHemoArtLacDt) ~
-#                                    EcmoWithoutHemoArtLac),
-#     EcmoWithoutHemoAst = case_when(!is.na(EcmoWithoutHemoAstDt) ~
-#                                    EcmoWithoutHemoAst),
-#     EcmoWithoutHemoAlt = case_when(!is.na(EcmoWithoutHemoAltDt) ~
-#                                    EcmoWithoutHemoAlt)) %>% 
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, JustId, unique_event, unique_date, 
-#          EcmoSystolicBloodPressure, EcmoCardiacIndex, 
-#          EcmoCapWedgePressure, EcmoWithoutHemoSbp, EcmoWithoutHemoArtLac, 
-#          EcmoWithoutHemoAst, EcmoWithoutHemoAlt)
-# 
-# just_stat2 <- just_stat2 %>% 
-#   distinct(across(-JustId), .keep_all = TRUE) %>%
-#   mutate(ChangeDt = ChangeDate) %>% 
-#   pivot_longer(cols = ends_with("Dt"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   mutate(
-#     McsdCardiacIndex = case_when(!is.na(McsdCardiacIndexDt) ~ McsdCardiacIndex),
-#     McsdCapWedgePressure = case_when(!is.na(McsdCapWedgePressureDt) ~ 
-#                                        McsdCapWedgePressure),
-#     McsdSystolicBloodPressure = case_when(!is.na(McsdSystolicBloodPressureDt) ~ 
-#                                        McsdSystolicBloodPressure),
-#     McsdWithoutHemoSbp = case_when(!is.na(McsdWithoutHemoSbpDt) ~ 
-#                                        McsdWithoutHemoSbp),
-#     McsdWithoutHemoArtLac = case_when(!is.na(McsdWithoutHemoArtLacDt) ~ 
-#                                        McsdWithoutHemoArtLac),
-#     McsdWithoutHemoAst = case_when(!is.na(McsdWithoutHemoAstDt) ~ 
-#                                        McsdWithoutHemoAst),
-#     IabpCardiacIndex = case_when(!is.na(IabpCardiacIndexDt) ~ 
-#                                        IabpCardiacIndex),
-#     IabpCapWedgePressure = case_when(!is.na(IabpCapWedgePressureDt) ~ 
-#                                        IabpCapWedgePressure),
-#     IabpSystolicBloodPressure = case_when(!is.na(IabpSystolicBloodPressureDt) ~ 
-#                                        IabpSystolicBloodPressure),
-#     IabpWithoutHemoSbp = case_when(!is.na(IabpWithoutHemoSbpDt) ~ 
-#                                        IabpWithoutHemoSbp),
-#     IabpWithoutHemoArtLac = case_when(!is.na(IabpWithoutHemoArtLacDt) ~ 
-#                                        IabpWithoutHemoArtLac),
-#     IabpWithoutHemoAst = case_when(!is.na(IabpWithoutHemoAstDt) ~ 
-#                                        IabpWithoutHemoAst),
-#     IabpWithoutHemoAlt = case_when(!is.na(IabpWithoutHemoAltDt) ~ 
-#                                        IabpWithoutHemoAlt)) %>% 
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, JustId, unique_event, unique_date, McsdCardiacIndex, 
-#          McsdCapWedgePressure, McsdSystolicBloodPressure, McsdWithoutHemoSbp, 
-#          McsdWithoutHemoArtLac, McsdWithoutHemoAst, 
-#          IabpCardiacIndex, IabpCapWedgePressure, IabpSystolicBloodPressure,
-#          IabpWithoutHemoSbp, IabpWithoutHemoArtLac, IabpWithoutHemoAst,
-#          IabpWithoutHemoAlt)
-# 
-# just_stat3 <- just_stat3 %>% 
-#   distinct(across(-JustId), .keep_all = TRUE) %>%
-#   mutate(
-#     ChangeDt = ChangeDate) %>% 
-#   pivot_longer(cols = ends_with("Dt"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   mutate(
-#     InoCardiacIndex = case_when(!is.na(InoCardiacIndexDt) ~ InoCardiacIndex),
-#     InoCapWedgePressure = case_when(!is.na(InoCapWedgePressureDt) ~ 
-#                                       InoCapWedgePressure),
-#     InoSysBloodPressure = case_when(!is.na(InoSysBloodPressureDt) ~ 
-#                                       InoSysBloodPressure),
-#     McsdWithRhfPcwp = case_when(!is.na(McsdWithRhfPcwpDt) ~ 
-#                                       McsdWithRhfPcwp),
-#     McsdWithRhfVenPressure = case_when(!is.na(McsdWithRhfVenPressureDt) ~ 
-#                                       McsdWithRhfVenPressure)) %>% 
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, JustId, unique_event, unique_date, InoCardiacIndex,
-#          InoCapWedgePressure, InoSysBloodPressure, McsdLactateDehydrogenase,
-#          McsdPlasmaFreeHemoglobin, McsdHemoglobinuria,
-#          McsdWithPumpTransIscAttack, McsdWithRhfPcwp, McsdWithRhfVenPressure, 
-#          MucosalBleedNumHosp)
-# 
-# just_stat4 <- just_stat4 %>%
-#   distinct(across(-JustId), .keep_all = TRUE) %>% 
-#   mutate(ChangeDt = ChangeDate) %>%
-#   pivot_longer(cols = ends_with("Dt"),
-#                names_to = "event", 
-#                values_to = "date", 
-#                values_drop_na = TRUE) %>%
-#   arrange(date) %>% 
-#   group_by(date) %>% 
-#   mutate(unique_date = date) %>%
-#   group_by(PX_ID, date) %>% 
-#   mutate(unique_event = str_c(event, collapse = ",")) %>% 
-#   pivot_wider(names_from = event, values_from = date) %>%
-#   mutate(
-#     InotropeCardiacIndex = case_when(!is.na(InotropeCardiacIndexDt) ~ 
-#                                        InotropeCardiacIndex),
-#     InotropePcwp = case_when(!is.na(InotropePcwpDt) ~ 
-#                                        InotropePcwp)) %>% 
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup() %>%
-#   select(PX_ID, JustId, unique_event, unique_date, 
-#          InotropeCardiacIndex, InotropePcwp)
-# 
-# just_all_stat <- just_stat1 %>% 
-#   full_join(just_stat2, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
-#   full_join(just_stat3, by = c("PX_ID", "unique_event", "unique_date", "JustId")) %>%
-#   full_join(just_stat4, by = c("PX_ID", "unique_event", "unique_date", "JustId"))
-#   
-# # full join on common variables
-# full_list <- full_list %>% 
-#   full_join(just_all_stat, by = c("PX_ID", "unique_event", "unique_date")) %>% 
-#   
-#   # # justification forms have date-times instead of dates, so converting to date
-#   # mutate(unique_date = floor_date(unique_date, unit = "day")) %>%
-#   
-#   # # TODO: fix bug that does not combine all events (see PX_ID = 1238278, 1238293)
-#   # # combines events if events happened on the same day
-#   group_by(PX_ID, unique_date) %>%
-#   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
-# 
-#   # removes redundant rows after combining events above
-#   group_by(PX_ID, unique_date) %>%
-#   fill(WL_ORG:last_col(), .direction = "downup") %>%
-#   distinct() %>%
-#   
-#   # arranges dataset by PX_ID and event date for easy viewing
-#   arrange(PX_ID, unique_date) %>% 
-#   ungroup()
-```
-
-# 9. Pivot risk stratification data by date, then join with full_list
-
-```{r pivot risk strat data}
 risk_strat <- risk_strat %>%
-  pivot_longer(cols = ends_with("Dt"),
+  mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day"))) %>%
+  
+  # adding just_form and just_stat1-4 columns to risk_strat
+  full_join(just_form, by = c("ChangeDt", "JustId", "PX_ID")) %>%
+  full_join(just_stat1, by = c("JustId", "PX_ID", "ChangeDt")) %>%
+  full_join(just_stat2, by = c("JustId", "PX_ID", "ChangeDt"),
+            suffix = c(".stat1", ".stat2")) %>%
+  full_join(just_stat3, by = c("JustId", "PX_ID", "ChangeDt"),
+            suffix = c(".stat2", ".stat3")) %>% 
+  full_join(just_stat4, by = c("JustId", "PX_ID", "ChangeDt"),
+            suffix = c(".stat3", ".stat4")) %>%
+  
+  pivot_longer(cols = contains("Dt", ignore.case = FALSE),
                names_to = "event", 
                values_to = "date", 
-               values_drop_na = TRUE) %>%
+               values_drop_na = TRUE) %>% 
   
   group_by(date) %>% 
   mutate(unique_date = date) %>%
   group_by(PX_ID, date) %>% 
-  mutate(unique_event = str_c(event, collapse = ",")) %>% 
+  mutate(unique_event = event) %>% 
+  ungroup() %>% 
   pivot_wider(names_from = event, values_from = date) %>% 
+
+  # risk_strat variables
+  mutate(across(starts_with("CPTest"), ~ case_when(!is.na(CPTestDt) ~ .))) %>% 
+  mutate(across(starts_with("Hemo"), ~ case_when(!is.na(HemoDt) ~ .))) %>%
   mutate(
-    CPTestMvo2 = case_when(!is.na(CPTestDt) ~ CPTestMvo2),
-    CPTestRer = case_when(!is.na(CPTestDt) ~ CPTestRer),
-    CPTestVeVco2 = case_when(!is.na(CPTestDt) ~ CPTestVeVco2),
-    SenDataCpra = case_when(!is.na(SenDataDt) ~ SenDataCpra),
-    SenDataMfiThreshold = case_when(!is.na(SenDataDt) ~ SenDataMfiThreshold),
-    HemoObtainedOnSupport = case_when(!is.na(HemoDt) ~ HemoObtainedOnSupport),
-    HemoSbp = case_when(!is.na(HemoDt) ~ HemoSbp),
-    HemoDbp = case_when(!is.na(HemoDt) ~ HemoDbp),
-    HemoRestingHeartRate = case_when(!is.na(HemoDt) ~ HemoRestingHeartRate),
-    HemoCvp = case_when(!is.na(HemoDt) ~ HemoCvp),
-    HemoPasp = case_when(!is.na(HemoDt) ~ HemoPasp),
-    HemoPadp = case_when(!is.na(HemoDt) ~ HemoPadp),
-    HemoMeanPressure = case_when(!is.na(HemoDt) ~ HemoMeanPressure),
-    HemoPcwp = case_when(!is.na(HemoDt) ~ HemoPcwp),
-    HemoLvedp = case_when(!is.na(HemoDt) ~ HemoLvedp),
-    HemoCardiacOutput = case_when(!is.na(HemoDt) ~ HemoCardiacOutput),
-    HemoCardiacIndex = case_when(!is.na(HemoDt) ~ HemoCardiacIndex),
-    HemoSvo2 = case_when(!is.na(HemoDt) ~ HemoSvo2),
-    HemoHemoglobin = case_when(!is.na(HemoDt) ~ HemoHemoglobin),
     VadLdhLevels = case_when(!is.na(VadLdhLevelsDt) ~ VadLdhLevels),
     VadPlasmaFreeHemo = case_when(!is.na(VadPlasmaFreeHemoDt) ~ VadPlasmaFreeHemo),
     HrSevFailSodium = case_when(!is.na(HrSevFailSodiumDt) ~ HrSevFailSodium),
@@ -835,130 +514,476 @@ risk_strat <- risk_strat %>%
     HrSevFailInr = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInr),
     HrSevFailInrAntiCoag = case_when(!is.na(HrSevFailInrDt) ~ HrSevFailInrAntiCoag),
     HrSevFailBnp = case_when(!is.na(HrSevFailBnpDt) ~ HrSevFailBnp)) %>%
+  
+  # ChangeDt
+  mutate(RequestedCandStatCd = case_when(!is.na(ChangeDt) ~
+                                            RequestedCandStatCd)) %>% 
+    
+  # just_stat1 variables
+  mutate(
+    EcmoSystolicBloodPressure = case_when(!is.na(EcmoSystolicBloodPressureDt) ~
+                                            EcmoSystolicBloodPressure),
+    EcmoCardiacIndex = case_when(!is.na(EcmoCardiacIndexDt) ~
+                                   EcmoCardiacIndex),
+    EcmoCapWedgePressure = case_when(!is.na(EcmoCapWedgePressureDt) ~
+                                   EcmoCapWedgePressure),
+    EcmoWithoutHemoSbp = case_when(!is.na(EcmoWithoutHemoSbpDt) ~
+                                   EcmoWithoutHemoSbp),
+    EcmoWithoutHemoArtLac = case_when(!is.na(EcmoWithoutHemoArtLacDt) ~
+                                   EcmoWithoutHemoArtLac),
+    EcmoWithoutHemoAst = case_when(!is.na(EcmoWithoutHemoAstDt) ~
+                                   EcmoWithoutHemoAst),
+    EcmoWithoutHemoAlt = case_when(!is.na(EcmoWithoutHemoAltDt) ~
+                                   EcmoWithoutHemoAlt),
+    ExtMeanPressure.stat1 = case_when(!is.na(ExtMeanPressureDt.stat1) ~
+                                   ExtMeanPressure.stat1),
+    ExtCardiacIndex.stat1 = case_when(!is.na(ExtCardiacIndexDt.stat1) ~
+                                   ExtCardiacIndex.stat1),
+    ExtCapWedgePressure.stat1 = case_when(!is.na(ExtCapWedgePressureDt.stat1) ~
+                                   ExtCapWedgePressure.stat1),
+    ExtSvo2.stat1 = case_when(!is.na(ExtSvo2Dt.stat1) ~
+                                   ExtSvo2.stat1)) %>% 
+  
+  # just_stat2 variables
+  mutate(
+    McsdCardiacIndex = case_when(!is.na(McsdCardiacIndexDt) ~ McsdCardiacIndex),
+    McsdCapWedgePressure = case_when(!is.na(McsdCapWedgePressureDt) ~
+                                       McsdCapWedgePressure),
+    McsdSystolicBloodPressure = case_when(!is.na(McsdSystolicBloodPressureDt) ~
+                                       McsdSystolicBloodPressure),
+    McsdWithoutHemoSbp = case_when(!is.na(McsdWithoutHemoSbpDt) ~
+                                       McsdWithoutHemoSbp),
+    McsdWithoutHemoArtLac = case_when(!is.na(McsdWithoutHemoArtLacDt) ~
+                                       McsdWithoutHemoArtLac),
+    McsdWithoutHemoAst = case_when(!is.na(McsdWithoutHemoAstDt) ~
+                                       McsdWithoutHemoAst),
+    
+    # this date variable disappears after the full_join above because 
+    # it is completely missing values
+    # apparently, very few to no patients get their ALT recorded
+    # McsdWithoutHemoAlt = case_when(!is.na(McsdWithoutHemoAltDt) ~
+    #                                    McsdWithoutHemoAlt),
+    
+    IabpCardiacIndex = case_when(!is.na(IabpCardiacIndexDt) ~
+                                       IabpCardiacIndex),
+    IabpCapWedgePressure = case_when(!is.na(IabpCapWedgePressureDt) ~
+                                       IabpCapWedgePressure),
+    IabpSystolicBloodPressure = case_when(!is.na(IabpSystolicBloodPressureDt) ~
+                                       IabpSystolicBloodPressure),
+    IabpWithoutHemoSbp = case_when(!is.na(IabpWithoutHemoSbpDt) ~
+                                       IabpWithoutHemoSbp),
+    IabpWithoutHemoArtLac = case_when(!is.na(IabpWithoutHemoArtLacDt) ~
+                                       IabpWithoutHemoArtLac),
+    IabpWithoutHemoAst = case_when(!is.na(IabpWithoutHemoAstDt) ~
+                                       IabpWithoutHemoAst),
+    IabpWithoutHemoAlt = case_when(!is.na(IabpWithoutHemoAltDt) ~
+                                       IabpWithoutHemoAlt),
+    ExtMeanPressure.stat2 = case_when(!is.na(ExtMeanPressureDt.stat2) ~
+                                   ExtMeanPressure.stat2),
+    ExtCardiacIndex.stat2 = case_when(!is.na(ExtCardiacIndexDt.stat2) ~
+                                   ExtCardiacIndex.stat2),
+    ExtCapWedgePressure.stat2 = case_when(!is.na(ExtCapWedgePressureDt.stat2) ~
+                                   ExtCapWedgePressure.stat2),
+    ExtSvo2.stat2 = case_when(!is.na(ExtSvo2Dt.stat2) ~
+                                   ExtSvo2.stat2)) %>%
+  
+  # just_stat3 variables
+  mutate(
+    InoCardiacIndex = case_when(!is.na(InoCardiacIndexDt) ~ InoCardiacIndex),
+    InoCapWedgePressure = case_when(!is.na(InoCapWedgePressureDt) ~
+                                      InoCapWedgePressure),
+    InoSysBloodPressure = case_when(!is.na(InoSysBloodPressureDt) ~
+                                      InoSysBloodPressure),
+    McsdWithRhfDobutamine = case_when(!is.na(McsdWithRhfDobutamineDt) ~
+                                      McsdWithRhfDobutamine),
+    
+    # this date variable also disappears after the full_join above because
+    # it is all NAs
+    # McsdWithRhfDopamine = case_when(!is.na(McsdWithRhfDopamineDt) ~
+    #                                   McsdWithRhfDopamine),
+    
+    McsdWithRhfEpinephrine = case_when(!is.na(McsdWithRhfEpinephrineDt) ~
+                                      McsdWithRhfEpinephrine),
+    McsdWithRhfMilrinone = case_when(!is.na(McsdWithRhfMilrinoneDt) ~
+                                      McsdWithRhfMilrinone),
+    
+    # these date variables also disappear after the full_join above because
+    # they are all NAs
+    # McsdWithRhfNitricOxide = case_when(!is.na(McsdWithRhfNitricOxideDt) ~
+    #                                   McsdWithRhfNitricOxide),
+    # McsdWithRhfProstacyclin = case_when(!is.na(McsdWithRhfProstacyclinDt) ~
+    #                                   McsdWithRhfProstacyclin),
+    
+    McsdWithRhfPcwp = case_when(!is.na(McsdWithRhfPcwpDt) ~
+                                      McsdWithRhfPcwp),
+    McsdWithRhfVenPressure = case_when(!is.na(McsdWithRhfVenPressureDt) ~
+                                      McsdWithRhfVenPressure)) %>%
+  
+  # just_stat4 variables
+   mutate(
+    InotropeCardiacIndex = case_when(!is.na(InotropeCardiacIndexDt) ~
+                                       InotropeCardiacIndex),
+    InotropePcwp = case_when(!is.na(InotropePcwpDt) ~
+                                       InotropePcwp)) %>%
+  
+   mutate(
+    systolicBP = coalesce(HemoSbp, EcmoWithoutHemoSbp, McsdWithoutHemoSbp,
+                          IabpWithoutHemoSbp, EcmoSystolicBloodPressure,
+                          McsdSystolicBloodPressure, IabpSystolicBloodPressure,
+                          InoSysBloodPressure),
+    PCWP = coalesce(HemoPcwp, McsdWithRhfPcwp, InotropePcwp, 
+                    EcmoCapWedgePressure, McsdCapWedgePressure, 
+                    IabpCapWedgePressure, InoCapWedgePressure, 
+                    ExtCapWedgePressure.stat1, ExtCapWedgePressure.stat2),
+    mean_arterial_pressure = coalesce(ExtMeanPressure.stat1, ExtMeanPressure.stat2),
+    central_venous_pressure = coalesce(HemoCvp, McsdWithRhfVenPressure),
+    SVO2 = coalesce(HemoSvo2, ExtSvo2.stat1, ExtSvo2.stat2),
+    cardiac_index = coalesce(HemoCardiacIndex, EcmoCardiacIndex, McsdCardiacIndex,
+                             IabpCardiacIndex, InoCardiacIndex, 
+                             InotropeCardiacIndex, ExtCardiacIndex.stat1,
+                             ExtCardiacIndex.stat2),
+    arterial_lactate = coalesce(EcmoWithoutHemoArtLac, McsdWithoutHemoArtLac,
+                                IabpWithoutHemoArtLac, HrSevFailArterialLact),
+    AST = coalesce(EcmoWithoutHemoAst, McsdWithoutHemoAst, IabpWithoutHemoAst,
+                   HrSevFailAsparTrans),
+    ALT = coalesce(EcmoWithoutHemoAlt, McsdWithoutHemoAlt, IabpWithoutHemoAlt),
+    dobutamine_dose = coalesce(McsdWithRhfDobutamine, InotropeDobutamine),
+    milrinone_dose = coalesce(McsdWithRhfMilrinone, InotropeMilrinone),
+    dopamine_dose = coalesce(McsdWithRhfDopamine, InotropeDopamine),
+    epinephrine_dose = coalesce(McsdWithRhfEpinephrine, InotropeEpinephrine)) %>% 
 
-  arrange(PX_ID, unique_date) %>% 
+  arrange(PX_ID, unique_date)
+
+# indicator variables from just_stat1-just_stat4
+just_form_indicator_variables <- c(
+  
+         # just_stat1 variables
+         "CriteriaEcmoSupport", "EcmoWithHemo",
+         "CardiacIndexInotropeSupport", "EcmoWithoutHemo", "ExtDemoContra.stat1",
+         "CriteriaBivadSupport", "CriteriaMcsdSupport", "VentricularEpisode",
+         "BivadPlacement",
+
+         # just_stat2 variables
+         "CriteriaLvadSupport.stat2", "CriteriaDurableDevSupport",
+         "CriteriaMcsdMalfunction", "CriteriaMcsdEndovasSupp", "McsdWithHemo",
+         "McsdCardiacIndexInotropeSup", "McsdWithoutHemo",
+         "CriteriaIabpSupport.stat2", "IabpWithHemo",
+         "IabpCardiacIndexInotropeSup", "IabpWithoutHemo", "CriteriaVentEpisode",
+         "ExtDemoContra.stat2",
+
+         # just_stat3 variables
+         "CriteriaLvadDiscSupport", "CriteriaInotropeSupport.stat3",
+         "InoInvasiveCatheter", "InoHemodynamicMonitoring", "InoSingle", "InoMultiple",
+         "InoSinDobutamine", "InoSinMilrinone", "InoSinEpinephrine", "InoMulDobutamine",
+         "InoMulMilrinone", "InoMulEpinephrine", "InoMulDopamine", "InoInotropeSupport",
+         "CriteriaMcsdWithHemo", "McsdLactateDehydrogenase", 
+         "McsdPlasmaFreeHemoglobin", "McsdHemoglobinuria", "CriteriaMcsdWithPump",
+         "McsdWithPumpThrombosis", "McsdWithPumpTransIscAttack", 
+         "CriteriaMcsdWithRhf",
+         # McsdWithRhfNitricOxide, McsdWithRhfProstacyclin,
+         "CriteriaMcsdInfection", "McsdInfectionErythema", "McsdInfectionDebridement",
+         "McsdInfectionBacAnti", "McsdInfectionBacReccur", "McsdInfectionPosCulture",
+         "CriteriaMcsdMucosalBleed", "MucosalBleedNumHosp", "CriteriaMcsdWithAI",
+         "CriteriaVaEcmoSupport", "CriteriaLvadSupport.stat3", "CriteriaPercuSupport",
+         "CriteriaIabpSupport.stat3", "ExtInoSingleDose", "ExtInoMultiDose",
+         "ExtInoSinDobutamine", "ExtInoSinMilrinone", "ExtInoSinEpinephrine",
+         "ExtInoMulDobutamine", "ExtInoMulMilrinone", "ExtInoMulEpinephrine",
+         "ExtInoMulDopamine", "ExtInvasiveCatheter", "ExtHemodynamicMonitoring",
+         "ExtCardiacIndx", "ExtFailedWeaningAttempt", "ExtFWACardiacIndex",
+         "ExtFWASerumCreatinine", "ExtFWAArterialLactate", "ExtFWASvo2",
+         "ExtMcsdDobutamine", "ExtMcsdDopamine", "ExtMcsdEpinephrine",
+         "ExtMcsdMilrinone", "ExtMcsdNitricOxide", "ExtMcsdProstacyclin",
+
+         # just_stat4 variables
+         "CriteriaLvadSupport", "CriteriaInotropeSupport.stat4",
+         "CriteriaHeartDisease", "HeartDiseaseValues", "HeartDiseaseOther",
+         "CriteriaIschemicHeart", "CriteriaCardiomyopathy", "CardioHypertrophic",
+         "CardioAmyloidosis", "CardioRestrict", "CardiomyopathyCanadian",
+         "CardiomyopathyNyha", "CardiomyopathyNyhaCdx", "CardiomyopathyNyhaPcwp",
+         "CardiomyopathyVenTachy", "CardiomyopathyVenFib", "CardiomyopathyVenArr",
+         "CardiomyopathySuddenDeath", "CriteriaRetransplant", "ExtInotropeDobutamine",
+         "ExtInotropeMilrinone", "ExtInotropeEpinephrine", "ExtInotropeDopamine")
+  
+risk_strat <- risk_strat %>%   
+  select(PX_ID, JustId, unique_date, unique_event,
+         
+         # aggregated variables
+         systolicBP, PCWP, mean_arterial_pressure, central_venous_pressure, 
+         SVO2, cardiac_index, arterial_lactate, AST, ALT, dobutamine_dose,
+         milrinone_dose, dopamine_dose, epinephrine_dose,
+         
+         # risk_strat variables
+         CPTestMvo2, CPTestRer, CPTestVeVco2, HemoObtainedOnSupport, HemoDbp,
+         HemoRestingHeartRate, HemoPasp, HemoPadp, HemoMeanPressure, HemoLvedp,
+         HemoCardiacOutput, HemoHemoglobin, VadLdhLevels, VadPlasmaFreeHemo,
+         VadHemoglobinuria, HrSevFailSodium, HrSevFailCreatinine,
+         HrSevFailBun, HrSevFailAlbumin, HrSevFailBilirubin, HrSevFailInr,
+         HrSevFailInrAntiCoag, HrSevFailBnp, RequestedCandStatCd,
+         ExtensionNumber, Exception, AdmittedToHospital, listing_description,
+         
+         # indicator variables from just_stat1-just_stat4
+         all_of(just_form_indicator_variables))
+
+         
+risk_strat <- risk_strat %>%
+  
+  pivot_longer(cols = -c(PX_ID, JustId, unique_date, unique_event,
+                         dobutamine_dose, milrinone_dose, dopamine_dose,
+                         epinephrine_dose, HemoObtainedOnSupport, 
+                         VadHemoglobinuria, HrSevFailInrAntiCoag,
+                         ExtensionNumber, Exception, AdmittedToHospital,
+                         listing_description, 
+                         all_of(just_form_indicator_variables)),
+               names_to = "variable", 
+               values_to = "value", 
+               values_drop_na = TRUE) %>% 
+  relocate(variable, value, .after = unique_event) %>% 
+
+  distinct(across(c(PX_ID, unique_date, variable, value)), .keep_all = TRUE) %>% 
+  arrange(PX_ID, JustId, unique_date)
+
+duplicated_JustId <- risk_strat %>% 
+  group_by(PX_ID, unique_date, variable) %>% 
+  filter(n() > 1) %>% 
+  group_by(PX_ID, unique_date, variable) %>% 
+  select(JustId) %>% 
+  ungroup()
+
+earlier_JustId <- risk_strat %>% 
+  group_by(PX_ID, unique_date, variable) %>% 
+  filter(n() > 1) %>% 
+  group_by(PX_ID, unique_date, variable) %>% 
+  slice_min(JustId) %>% 
+  select(JustId) %>% 
+  ungroup()
+
+later_JustId <- duplicated_JustId %>% anti_join(earlier_JustId)
+  
+later_ChangeDt <- risk_strat %>% 
+  select(PX_ID, unique_date, variable, JustId) %>% 
+  filter(grepl("RequestedCandStatCd", variable)) %>% 
+  semi_join(later_JustId, by = c("PX_ID", "JustId"))
+
+merged_JustId <- later_JustId %>% 
+  left_join(later_ChangeDt %>% select(-variable), 
+            by = c("PX_ID", "JustId"), 
+            suffix = c("", ".replaced"))
+
+risk_strat <- risk_strat %>% 
+  left_join(merged_JustId, 
+            by = c("PX_ID", "JustId", "variable", "unique_date")) %>% 
+  mutate(unique_date = case_when(
+    !is.na(unique_date.replaced) ~ unique_date.replaced,
+    is.na(unique_date.replaced) ~ unique_date)) %>% 
+  select(-unique_date.replaced) %>% 
+  distinct(across(c(PX_ID, unique_date, variable)), .keep_all = TRUE)
+
+rm(duplicated_JustId, earlier_JustId, later_JustId, later_ChangeDt, merged_JustId)
+
+risk_strat <- risk_strat %>% 
+  pivot_wider(names_from = variable,
+              values_from = value) %>% 
+ 
+  relocate(systolicBP, PCWP, mean_arterial_pressure, central_venous_pressure, 
+         SVO2, cardiac_index, arterial_lactate, AST, ALT,
+         HemoDbp, HemoRestingHeartRate, HemoPasp, HemoPadp, HemoMeanPressure,
+         HemoLvedp, HemoCardiacOutput, HemoHemoglobin, CPTestMvo2, CPTestRer,
+         CPTestVeVco2, VadLdhLevels, VadPlasmaFreeHemo, HrSevFailSodium,
+         HrSevFailCreatinine, HrSevFailBun, HrSevFailAlbumin, 
+         HrSevFailBilirubin, HrSevFailInr, HrSevFailBnp, RequestedCandStatCd,
+         .after = unique_event)
+
+risk_strat <- risk_strat %>%
+  
+  pivot_longer(cols = starts_with("Criteria", ignore.case = FALSE),
+               names_to = "criteria", 
+               values_to = "indicator", 
+               values_drop_na = FALSE) %>% 
+  relocate(criteria, indicator, .after = unique_event) %>% 
+  mutate(status_criteria = ifelse(indicator == 1, criteria, NA)) %>%
+  filter(is.na(indicator) | indicator == 1) %>% 
+  
+  pivot_wider(names_from = criteria,
+              values_from = indicator) %>% 
+  
+  relocate(status_criteria, .after = unique_event) %>% 
+  arrange(PX_ID, JustId, unique_date) %>% 
+  group_by(PX_ID, JustId, unique_event, unique_date) %>% 
+  filter(row_number() == n()) %>% 
   ungroup() %>% 
-  
-  select(PX_ID, RiskStratId, unique_date, unique_event, 
-         CandHistNumSternotomies, CandHistStroke, CandHistThromb,
-         CandHistNumHospAdmn, CurrTherOnLoopDiuretic, CurrTherVasoactiveSupport,
-         CurrTherAntiArrhythmics, CurrTherPulVas, CurrTherOnDialysis,
-         CurrTherMechVent, CPTestMvo2, CPTestRer, CPTestVeVco2, SenDataCpra, 
-         SenDataMfiThreshold, HemoObtainedOnSupport, HemoSbp, HemoDbp,
-         HemoRestingHeartRate, HemoCvp, HemoPasp, HemoPadp, HemoMeanPressure, 
-         HemoPcwp, HemoLvedp, HemoCardiacOutput, HemoCardiacIndex, HemoSvo2,
-         HemoHemoglobin, VadLdhLevels, VadPlasmaFreeHemo, VadHemoglobinuria, 
-         HrSevFailSodium, HrSevFailCreatinine, HrSevFailBun, HrSevFailAlbumin, 
-         HrSevFailAsparTrans, HrSevFailBilirubin, HrSevFailArterialLact, 
-         HrSevFailInr, HrSevFailInrAntiCoag, HrSevFailBnp)  
+  select(-starts_with("Criteria"))
 
-full_list <- full_list %>% 
-  
+full_list <- full_list %>%
+
   # full join by common variables, thus no need for suffix
-  full_join(risk_strat, by = c("PX_ID", "unique_date", "unique_event")) %>% 
-  
+  full_join(risk_strat, by = c("PX_ID", "unique_date", "unique_event")) %>%
+
   # combines events if events happened on the same day
   group_by(PX_ID, unique_date) %>%
   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
 
   # removes redundant rows after combining events above
   group_by(PX_ID, unique_date) %>%
-  fill(WL_ORG:last_col(), .direction = "downup") %>%
-  distinct() %>%
+  fill(CANHX_STAT_CD:ExtInotropeDopamine, .direction = "downup") %>%
+  distinct(.keep_all = TRUE) %>%
+
+  relocate(JustId, .after = PX_ID) %>%
   
+  # necessary for filling steps below
+  arrange(PX_ID, unique_date) %>%
+  
+  # fill status code "down" to show status changes over time
+  group_by(PX_ID) %>% 
+  fill(CANHX_STAT_CD, .direction = "down") %>%
+  ungroup() %>% 
+  
+  arrange(PX_ID, unique_date) %>%
+  
+  # fill cand_thor and tx_hr variables "downup" because these variables are static
+  group_by(PX_ID) %>% 
+  fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+  ungroup() %>% 
+  
+  arrange(PX_ID, unique_date) %>%
+  
+  # fill risk_strat variables "down" to show change over time
+  # we are filling missing values using the na.locf() method
+  group_by(PX_ID) %>% 
+  fill(systolicBP:HrSevFailBnp, .direction = "down") %>%
+  ungroup() %>%
+
   # arranges dataset for easy viewing
-  arrange(PX_ID, unique_date) %>% 
+  arrange(PX_ID, unique_date) %>%
   ungroup()
 
 ```
 
-# 10. Calculating number of days between each observation in full_list, by PX_ID
+# 8. Pivot old policy justification forms by date, then join with full_list
 
-```{r}
+```{r pivot old just forms}
 
-# stat1_criteria = case_when(
-#     CriteriaEcmoSupport == 1 ~ "Status 1: ECMO",
-#     CriteriaBivadSupport == 1 ~ "Status 1: BiVAD",
-#     CriteriaMcsdSupport == 1 ~ "Status 1: MCSD with ventricular arrhythmia",
-#     TRUE ~ "Status 1: Exception"),
+just_stat1a_1b <- just_stat1a %>%
+  full_join(just_stat1b,
+            by = c("WL_ORG", "PX_ID", "CANHX_STAT_CD", "CANHX_STAT_TY",
+                   "CANHX_INIT_FORM", "CANHX_CHG_DT", "CANHX_FORM_STAT", 
+                   "CANHX_AGE_GROUP", "CANHX_DGN", "CANHX_VAD", 
+                   "CANHX_VAD_IMPLANT_DT", "CAN_LISTING_CTR_ID"))
 
-# stat2_criteria = case_when(
-#     CriteriaLvadSupport == 1 ~ "Status 2: Non-dischargeable LVAD",
-#     CriteriaDurableDevSupport == 1 ~ "Status 2: Durable VAD",
-#     CriteriaMcsdMalfunction == 1 ~ "Status 2: MCSD malfunction",
-#     CriteriaMcsdEndovasSupp == 1 ~ "Status 2: Endovascular MCSD",
-#     CriteriaIabpSupport == 1 ~ "Status 2: IABP",
-#     CriteriaVentEpisode == 1 ~ "Status 2: Ventricular episodes",
-#     TRUE ~ "Status 2: Exception"),
+just_stat1a_1b <- just_stat1a_1b %>%
 
-# stat3_criteria = case_when(
-#     CriteriaLvadDiscSupport == 1 ~ "Status 3: Dischargeable LVAD discretionary time",
-#     CriteriaInotropeSupport == 1 ~ "Status 3: Inotropes with hemodynamic monitoring",
-#     CriteriaMcsdWithHemo == 1 ~ "Status 3: MCSD with hemolysis",
-#     CriteriaMcsdWithPump == 1 ~ "Status 3: MCSD with pump thrombosis",
-#     CriteriaMcsdWithRhf == 1 ~ "Status 3: MCSD with RHF",
-#     CriteriaMcsdInfection == 1 ~ "Status 3: MCSD with device infection",
-#     CriteriaMcsdMucosalBleed == 1 ~ "Status 3: MCSD with bleeding",
-#     CriteriaMcsdWithAI == 1 ~ "Status 3: MCSD with AI",
-#     CriteriaVaEcmoSupport == 1 ~ "Status 3: ECMO after 7 days",
-#     CriteriaLvadSupport == 1 ~ "Status 3: Non-dischargeable LVAD after 14 days",
-#     CriteriaPercuSupport == 1 ~ "Status 3: Endovascular MCSD after 14 days",
-#     CriteriaIabpSupport == 1 ~ "Status 3: IABP after 14 days",
-#     TRUE ~ "Status 3: Exception"),
+  # include only completed forms (small minority are excluded by this step)
+  filter(CANHX_FORM_STAT == 4 | CANHX_FORM_STAT == 8) %>%
 
-# stat4_criteria = case_when(
-#     CriteriaLvadSupport == 1 ~ "Status 4: Dischargeable LVAD without discretionary time",
-#     CriteriaInotropeSupport == 1 ~ "Status 4: Inotropes without hemodynamic monitoring",
-#     CriteriaHeartDisease == 1 ~ "Status 4: Congenital heart disease",
-#     CriteriaIschemicHeart == 1 ~ "Status 4: Ischemic heart disease with intractable angina",
-#     CriteriaCardiomyopathy == 1 ~ "Status 4: Amyloidosis, HCM, or RCM",
-#     CriteriaRetransplant == 1 ~ "Status 4: Re-transplant",
-#     TRUE ~ "Status 4: Exception"),
+  # remove duplicate forms
+  distinct(PX_ID, CANHX_CHG_DT, .keep_all = TRUE) %>%
+  
+  mutate(low_dose_inotrope =
+           pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>%
 
-  # mutate(status_criteria = coalesce(stat1_criteria,
-  #                                   stat2_criteria,
-  #                                   stat3_criteria,
-  #                                   stat4_criteria)) %>%
-  # mutate(status_criteria =
-  #          ifelse(is.na(status_criteria), "Status 6", status_criteria)) %>%
-  # select(-stat1_criteria, -stat2_criteria, -stat3_criteria, -stat4_criteria)
+  select(PX_ID, CANHX_CHG_DT, CANHX_LAB_DT, CANHX_IABP_DT, CANHX_ECMO_DT,
+         CANHX_LVAD_DT, CANHX_VAD_IMPLANT_DT, CANHX_TAH_DT, CANHX_RVAD_DT,
+         CANHX_HEMO_DT, CAN_LISTING_CTR_ID,
+         CANHX_STAT_CD, CANHX_STAT_TY, CANHX_FORM_STAT,
+	       CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
+	       CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B,
+         CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D,
+         CANHX_ADULT_CRITERIA_E, CANHX_INTRP_DOBU, CANHX_INTRP_DOPA,
+         CANHX_INTRP_MILRIN, CANHX_ADMITTED, CANHX_IABP, CANHX_ECMO,
+         CANHX_LVAD_TYPE, CANHX_VAD, CANHX_TAH, CANHX_RVAD_TYPE,
+         CANHX_CARD_OUTPUT, CANHX_HEMO_CI, CANHX_HEMO_INTRP_OBTAINED,
+         CANHX_HEMO_BSA, CANHX_HEMO_PCWP, CANHX_HEMO_MPAP,
+	       CANHX_DEV_MALFUNCTN, CANHX_DEV_VENT_ARRYTHM, 
+         
+         # just_stat1b variables
+         CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
+  
+  pivot_longer(cols = ends_with("DT"),
+               names_to = "event",
+               values_to = "date",
+               values_drop_na = TRUE) %>%
 
-  # # fills status criteria from justification form to all rows within each
-  # # group of PX_ID and JustId
-  # group_by(PX_ID, JustId) %>% 
-  # fill(status_criteria, .direction = "downup") %>% 
-  # ungroup() %>% 
+  arrange(date) %>%
+  group_by(date) %>%
+  mutate(unique_date = date) %>%
+  group_by(PX_ID, date) %>%
+  mutate(unique_event = event) %>%
+  pivot_wider(names_from = event, values_from = date) %>%
+  arrange(PX_ID, unique_date) %>%
+  ungroup() %>%
+  select(PX_ID, unique_event, unique_date,
+         CAN_LISTING_CTR_ID:last_col())
 
 full_list <- full_list %>%
+
+  # full join by common variables, thus no need for suffix
+  full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>%
+
+  # combines events if events happened on the same day
+  group_by(PX_ID, unique_date) %>%
+  mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
+
+  # removes redundant rows after combining events above
+  group_by(PX_ID, unique_date) %>%
+  fill(WL_ORG:CANHX_DEV_VENT_ARRYTHM, .direction = "downup") %>%
+  distinct() %>%
+
+  # arranges dataset for easy viewing
+  arrange(PX_ID, unique_date) %>%
+  ungroup()
+```
+
+# 9. Method to filter full_list to exclude unwanted timepoints
+
+```{r filter full_list}
+
+full_list_final <- full_list %>% 
+  filter(grepl("CAN_LISTING_DT", unique_event) |
+         grepl("REC_TX_DT", unique_event) |
+         grepl("PERS_OPTN_DEATH_DT", unique_event))
+  
+```
+
+
+# 10. Calculating number of days between each observation in full_list, by PX_ID
+
+```{r calculate time steps}
+
+full_list_final <- full_list_final %>%
   ungroup() %>% 
   mutate(t_start = 0, t_stop = 0) %>% 
   arrange(PX_ID, unique_date)
 
-for (i in 2:nrow(full_list)) {
-  if (full_list$PX_ID[[i]] == 
-      full_list$PX_ID[[i-1]]) {
+for (i in 2:nrow(full_list_final)) {
+  if (full_list_final$PX_ID[[i]] == 
+      full_list_final$PX_ID[[i-1]]) {
     
-    full_list$t_stop[[i-1]] = 
-      full_list$unique_date[[i]] - 
-      full_list$unique_date[[i-1]] +
-      full_list$t_start[[i-1]]
+    full_list_final$t_stop[[i-1]] = 
+      full_list_final$unique_date[[i]] - 
+      full_list_final$unique_date[[i-1]] +
+      full_list_final$t_start[[i-1]]
     
-    full_list$t_start[[i]] = full_list$t_stop[[i-1]]
+    full_list_final$t_start[[i]] = full_list_final$t_stop[[i-1]]
     
   } else {
     
-    full_list$t_stop[[i-1]] = 
-      full_list$t_start[[i-1]]
+    full_list_final$t_stop[[i-1]] = 
+      full_list_final$t_start[[i-1]]
     
-    full_list$t_start[[i]] = 0
+    full_list_final$t_start[[i]] = 0
       
   }
 }
 
-full_list <- full_list %>% 
-  select(PX_ID, unique_event, unique_date, t_start, t_stop, WL_ORG:last_col())
+full_list_final <- full_list_final %>% 
+  select(PX_ID, JustId, unique_event, unique_date, t_start, t_stop, CANHX_STAT_CD:last_col())
+
+filename <-  paste0("full_list_final_", today(), ".RData")
+
+save(full_list_final, file = filename)
 
 ```
+
+# Scratch work used to make figure for poster on 6/1/2022
 
 ```{r}
 
