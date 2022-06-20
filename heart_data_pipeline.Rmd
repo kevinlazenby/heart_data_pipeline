@@ -937,9 +937,122 @@ full_list <- full_list %>%
 ```{r filter full_list}
 
 full_list_final <- full_list %>% 
-  filter(grepl("CAN_LISTING_DT", unique_event) |
-         grepl("REC_TX_DT", unique_event) |
-         grepl("PERS_OPTN_DEATH_DT", unique_event))
+  
+  filter(
+    
+    # cand_thor variables
+    grepl("CAN_LISTING_DT", unique_event) |
+      grepl("PERS_OPTN_DEATH_DT", unique_event) |
+      grepl("PERS_SSA_DEATH_DT", unique_event) |
+      grepl("PERS_RESTRICT_DEATH_DT", unique_event) |
+      grepl("CAN_REM_DT", unique_event) |
+      
+      # stathist_thor variables
+      grepl("CANHX_BEGIN_DT", unique_event) |
+           
+      # tx_hr variables
+      grepl("REC_TX_DT", unique_event) |
+      grepl("REC_ADMISSION_DT", unique_event) |
+      grepl("REC_DISCHRG_DT", unique_event) |
+      grepl("TFL_GRAFT_DT", unique_event) |
+      grepl("TFL_DEATH_DT", unique_event) |
+      grepl("TFL_LAST_FU_DT", unique_event) |
+      
+      # just_form_hr variables
+      grepl("ChangeDt", unique_event) |
+      
+      # just_form_hr_stat1 variables
+      grepl("EcmoSystolicBloodPressureDt", unique_event) |
+      grepl("EcmoCardiacIndexDt", unique_event) |
+      grepl("EcmoCapWedgePressureDt", unique_event) |
+      grepl("EcmoWithoutHemoCprDt", unique_event) |
+      grepl("EcmoWithoutHemoSbpDt", unique_event) |
+      grepl("EcmoWithoutHemoArtLacDt", unique_event) |
+      grepl("EcmoWithoutHemoAstDt", unique_event) |
+      grepl("EcmoWithoutHemoAltDt", unique_event) |
+      grepl("ExtMeanPressureDt.stat1", unique_event) |
+      grepl("ExtCardiacIndexDt.stat1", unique_event) |
+      grepl("ExtCapWedgePressureDt.stat1", unique_event) |
+      grepl("ExtSvo2Dt.stat1", unique_event) |
+      
+      # just_form_hr_stat2 variables
+      grepl("McsdCardiacIndexDt", unique_event) |
+      grepl("McsdCapWedgePressureDt", unique_event) |
+      grepl("McsdSystolicBloodPressureDt", unique_event) |
+      grepl("McsdWithoutHemoCprDt", unique_event) |
+      grepl("McsdWithoutHemoSbpDt", unique_event) |
+      grepl("McsdWithoutHemoArtLacDt", unique_event) |
+      grepl("McsdWithoutHemoAstDt", unique_event) |
+      grepl("McsdWithoutHemoAltDt", unique_event) |
+      grepl("IabpCardiacIndexDt", unique_event) |
+      grepl("IabpCapWedgePressureDt", unique_event) |
+      grepl("IabpSystolicBloodPressureDt", unique_event) |
+      grepl("IabpWithoutHemoCprDt", unique_event) |
+      grepl("IabpWithoutHemoSbpDt", unique_event) |
+      grepl("IabpWithoutHemoArtLacDt", unique_event) |
+      grepl("IabpWithoutHemoAstDt", unique_event) |
+      grepl("IabpWithoutHemoAltDt", unique_event) |
+      grepl("ExtMeanPressureDt.stat2", unique_event) |
+      grepl("ExtCardiacIndexDt.stat2", unique_event) |
+      grepl("ExtCapWedgePressureDt.stat2", unique_event) |
+      grepl("ExtSvo2Dt.stat2", unique_event) |
+      
+      # just_form_hr_stat3 variables
+      grepl("InoCardiacIndexDt", unique_event) |
+      grepl("InoCapWedgePressureDt", unique_event) |
+      grepl("InoSysBloodPressureDt", unique_event) |
+      grepl("McsdWithRhfDobutamineDt", unique_event) |
+      grepl("McsdWithRhfDopamineDt", unique_event) |
+      grepl("McsdWithRhfEpinephrineDt", unique_event) |
+      grepl("McsdWithRhfMilrinoneDt", unique_event) |
+      grepl("McsdWithRhfNitricOxideDt", unique_event) |
+      grepl("McsdWithRhfProstacyclinDt", unique_event) |
+      grepl("McsdWithRhfPcwpDt", unique_event) |
+      grepl("McsdWithRhfVenPressureDt", unique_event) |
+      grepl("ExtMcsdDobutamineDt", unique_event) |
+      grepl("ExtMcsdDopamineDt", unique_event) |
+      grepl("ExtMcsdEpinephrineDt", unique_event) |
+      grepl("ExtMcsdMilrinoneDt", unique_event) |
+      grepl("ExtMcsdNitricOxideDt", unique_event) |
+      grepl("ExtMcsdProstacyclinDt", unique_event) |
+      
+      # just_form_hr_stat4 variables
+      grepl("InotropeCardiacIndexDt", unique_event) |
+      grepl("InotropePcwpDt", unique_event) |
+      
+      # risk_strat_data_hr variables
+      grepl("CPTestDt", unique_event) |
+      grepl("SenDataDt", unique_event) |
+      grepl("HemoDt", unique_event) |
+      grepl("VadLdhLevelsDt", unique_event) |
+      grepl("VadPlasmaFreeHemoDt", unique_event) |
+      grepl("HrSevFailSodiumDt", unique_event) |
+      grepl("HrSevFailCreatinineDt", unique_event) |
+      grepl("HrSevFailBunDt", unique_event) |
+      grepl("HrSevFailAlbuminDt", unique_event) |
+      grepl("HrSevFailAsparTransDt", unique_event) |
+      grepl("HrSevFailBilirubinDt", unique_event) |
+      grepl("HrSevFailArterialLactDt", unique_event) |
+      grepl("HrSevFailInrDt", unique_event) |
+      grepl("HrSevFailBnpDt", unique_event) |
+      
+      # stat_just_hr1a and stat_just_hr1b variables
+      grepl("CANHX_CHG_DT", unique_event) |
+      grepl("CANHX_VAD_IMPLANT_DT", unique_event) |
+      grepl("CANHX_LVAD_DT", unique_event) |
+      grepl("CANHX_RVAD_DT", unique_event) |
+      grepl("CANHX_TAH_DT", unique_event) |
+      grepl("CANHX_IABP_DT", unique_event) |
+      grepl("CANHX_ECMO_DT", unique_event) |
+      grepl("CANHX_DEV_INFECT_VAD_DT", unique_event) |
+      grepl("CANHX_MECH_VENT_DT", unique_event) |
+      grepl("CANHX_HEMO_DT", unique_event) |
+      grepl("CANHX_CARD_LAST_SCD_DT", unique_event) |
+      grepl("CANHX_LAB_DT", unique_event) |
+      grepl("CANHX_PHYS_VITALS_DT", unique_event) |
+      grepl("CANHX_PHYS_HEMO_DT", unique_event) |
+      grepl("CANHX_PHYS_ECHO_DT", unique_event) |
+      grepl("CANHX_MED_UPDATE_DT", unique_event))
   
 ```
 
@@ -975,7 +1088,8 @@ for (i in 2:nrow(full_list_final)) {
 }
 
 full_list_final <- full_list_final %>% 
-  select(PX_ID, JustId, unique_event, unique_date, t_start, t_stop, CANHX_STAT_CD:last_col())
+  select(PX_ID, JustId, unique_event, unique_date, 
+         t_start, t_stop, CANHX_STAT_CD:last_col())
 
 filename <-  paste0("full_list_final_", today(), ".RData")
 
