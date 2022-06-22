@@ -205,7 +205,7 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 ```{r apply exclusion criteria}
 
 # change these variables to customize inclusion criteria
-filter_date <- mdy("10/18/2018")
+filter_date <- mdy("10/18/2017")
 include_multi_organ_recipients <- TRUE
 missingness_threshold <- 1
 
@@ -869,6 +869,8 @@ just_stat1a_1b <- just_stat1a %>%
                    "CANHX_AGE_GROUP", "CANHX_DGN", "CANHX_VAD", 
                    "CANHX_VAD_IMPLANT_DT", "CAN_LISTING_CTR_ID"))
 
+# rm(just_stat1a, just_stat1b)
+
 just_stat1a_1b <- just_stat1a_1b %>%
 
   # include only completed forms (small minority are excluded by this step)
@@ -879,20 +881,25 @@ just_stat1a_1b <- just_stat1a_1b %>%
   
   mutate(low_dose_inotrope =
            pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>%
-
-  select(PX_ID, CANHX_CHG_DT, CANHX_LAB_DT, CANHX_IABP_DT, CANHX_ECMO_DT,
-         CANHX_LVAD_DT, CANHX_VAD_IMPLANT_DT, CANHX_TAH_DT, CANHX_RVAD_DT,
-         CANHX_HEMO_DT, CAN_LISTING_CTR_ID,
-         CANHX_STAT_CD, CANHX_STAT_TY, CANHX_FORM_STAT,
-	       CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
-	       CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B,
-         CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D,
-         CANHX_ADULT_CRITERIA_E, CANHX_INTRP_DOBU, CANHX_INTRP_DOPA,
-         CANHX_INTRP_MILRIN, CANHX_ADMITTED, CANHX_IABP, CANHX_ECMO,
-         CANHX_LVAD_TYPE, CANHX_VAD, CANHX_TAH, CANHX_RVAD_TYPE,
-         CANHX_CARD_OUTPUT, CANHX_HEMO_CI, CANHX_HEMO_INTRP_OBTAINED,
-         CANHX_HEMO_BSA, CANHX_HEMO_PCWP, CANHX_HEMO_MPAP,
-	       CANHX_DEV_MALFUNCTN, CANHX_DEV_VENT_ARRYTHM, 
+  
+  mutate(RowNumber = row_number()) %>% 
+  
+  select(RowNumber, PX_ID, CANHX_STAT_CD, 
+         CANHX_STAT_TY, CANHX_FORM_STAT, CANHX_DGN, CANHX_ADMITTED,
+         CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B, CANHX_ADULT_CRITERIA_C,
+         CANHX_ADULT_CRITERIA_D, CANHX_ADULT_CRITERIA_E, CANHX_VAD,
+         CANHX_LVAD_TYPE, CANHX_RVAD_TYPE, CANHX_TAH, CANHX_IABP, CANHX_ECMO,
+         CANHX_THROMB_EMBOL, CANHX_DEV_INFECT, CANHX_DEV_MALFUNCTN,
+         CANHX_DEV_VENT_ARRYTHM, CANHX_DEV_OTHER, CANHX_INTRP_DOBU,
+         CANHX_INTRP_DOPA, CANHX_INTRP_MILRIN, CANHX_HEMO_INTRP_OBTAINED,
+         CANHX_HEMO_REST_HR_RATE, CANHX_HEMO_MAP, CANHX_HEMO_SBP,
+         CANHX_HEMO_DBP, CANHX_HEMO_CVP, CANHX_HEMO_PASP, CANHX_HEMO_PADP,
+         CANHX_HEMO_MPAP, CANHX_HEMO_PCWP, CANHX_CARD_OUTPUT, CANHX_HEMO_CI,
+         CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
+         CANHX_LAB_ALBUMIN, CANHX_LAB_SODIUM, CANHX_LAB_SGOT, CANHX_LAB_BNP,
+         CAN_LISTING_CTR_ID, CANHX_CHG_DT, CANHX_VAD_IMPLANT_DT, CANHX_LVAD_DT,
+         CANHX_RVAD_DT, CANHX_TAH_DT, CANHX_IABP_DT, CANHX_ECMO_DT,
+         CANHX_HEMO_DT, CANHX_LAB_DT,
          
          # just_stat1b variables
          CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
@@ -901,22 +908,80 @@ just_stat1a_1b <- just_stat1a_1b %>%
                names_to = "event",
                values_to = "date",
                values_drop_na = TRUE) %>%
-
-  arrange(date) %>%
-  group_by(date) %>%
+  
+  group_by(date) %>% 
   mutate(unique_date = date) %>%
-  group_by(PX_ID, date) %>%
+  group_by(PX_ID, date) %>% 
   mutate(unique_event = event) %>%
+  # mutate(unique_event = str_c(event, collapse = ",")) %>%
+  ungroup() %>% 
   pivot_wider(names_from = event, values_from = date) %>%
-  arrange(PX_ID, unique_date) %>%
-  ungroup() %>%
-  select(PX_ID, unique_event, unique_date,
-         CAN_LISTING_CTR_ID:last_col())
+
+  relocate(RowNumber, PX_ID, unique_event, unique_date) %>%
+
+  mutate(
+    CANHX_STAT_CD = case_when(!is.na(CANHX_CHG_DT) ~ CANHX_STAT_CD),
+    CANHX_VAD = case_when(!is.na(CANHX_VAD_IMPLANT_DT) ~ CANHX_VAD),
+    CANHX_LVAD_TYPE = case_when(!is.na(CANHX_LVAD_DT) ~ CANHX_LVAD_TYPE),
+    CANHX_RVAD_TYPE = case_when(!is.na(CANHX_RVAD_DT) ~ CANHX_RVAD_TYPE),
+    CANHX_TAH = case_when(!is.na(CANHX_TAH_DT) ~ CANHX_TAH),
+    CANHX_IABP = case_when(!is.na(CANHX_IABP_DT) ~ CANHX_IABP),
+    CANHX_ECMO = case_when(!is.na(CANHX_ECMO_DT) ~ CANHX_ECMO)) %>%
+
+  mutate(across(starts_with("CANHX_HEMO"),
+                ~ case_when(!is.na(CANHX_HEMO_DT) ~ .))) %>%
+
+  mutate(across(starts_with("CANHX_LAB"),
+                ~ case_when(!is.na(CANHX_LAB_DT) ~ .))) %>%
+
+  select(RowNumber, PX_ID, unique_event, unique_date, CANHX_STAT_CD, 
+         CANHX_STAT_TY, CANHX_FORM_STAT, CANHX_DGN, CANHX_ADMITTED,
+         CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B, CANHX_ADULT_CRITERIA_C,
+         CANHX_ADULT_CRITERIA_D, CANHX_ADULT_CRITERIA_E, CANHX_VAD,
+         CANHX_LVAD_TYPE, CANHX_RVAD_TYPE, CANHX_TAH, CANHX_IABP, CANHX_ECMO,
+         CANHX_THROMB_EMBOL, CANHX_DEV_INFECT, CANHX_DEV_MALFUNCTN,
+         CANHX_DEV_VENT_ARRYTHM, CANHX_DEV_OTHER, CANHX_INTRP_DOBU,
+         CANHX_INTRP_DOPA, CANHX_INTRP_MILRIN, CANHX_HEMO_INTRP_OBTAINED,
+         CANHX_HEMO_REST_HR_RATE, CANHX_HEMO_MAP, CANHX_HEMO_SBP,
+         CANHX_HEMO_DBP, CANHX_HEMO_CVP, CANHX_HEMO_PASP, CANHX_HEMO_PADP,
+         CANHX_HEMO_MPAP, CANHX_HEMO_PCWP, CANHX_CARD_OUTPUT, CANHX_HEMO_CI,
+         CANHX_DIALYSIS, CANHX_LAB_SERUM_CREAT, CANHX_LAB_BILI,
+         CANHX_LAB_ALBUMIN, CANHX_LAB_SODIUM, CANHX_LAB_SGOT, CANHX_LAB_BNP,
+         CAN_LISTING_CTR_ID,
+         
+         # just_stat1b variables
+         CANHX_CRIT_NOT_MET, low_dose_inotrope) %>%
+
+  arrange(PX_ID, unique_date)
+
+just_stat1a_1b <- just_stat1a_1b %>%
+  
+  pivot_longer(cols = -c(PX_ID, RowNumber, unique_date, unique_event,
+                         CANHX_STAT_TY, CANHX_FORM_STAT,
+                         CANHX_DGN, CANHX_ADMITTED, 
+                         CANHX_ADULT_CRITERIA_A, CANHX_ADULT_CRITERIA_B,
+                         CANHX_ADULT_CRITERIA_C, CANHX_ADULT_CRITERIA_D,
+                         CANHX_ADULT_CRITERIA_E, CANHX_THROMB_EMBOL,
+                         CANHX_DEV_INFECT, CANHX_DEV_MALFUNCTN,
+                         CANHX_DEV_VENT_ARRYTHM, CANHX_DEV_OTHER,
+                         CANHX_INTRP_DOBU, CANHX_INTRP_DOPA,
+                         CANHX_INTRP_MILRIN, CANHX_HEMO_INTRP_OBTAINED,
+                         CANHX_DIALYSIS, CAN_LISTING_CTR_ID,
+                         CANHX_CRIT_NOT_MET, low_dose_inotrope),
+               names_to = "variable", 
+               values_to = "value", 
+               values_drop_na = TRUE) %>% 
+  relocate(variable, value, .after = unique_event) %>% 
+
+  distinct(across(c(PX_ID, unique_date, variable, value)), .keep_all = TRUE) %>%
+  pivot_wider(names_from = variable, values_from = value) %>%
+  select(-RowNumber) %>% 
+  arrange(PX_ID, unique_date)
 
 full_list <- full_list %>%
 
   # full join by common variables, thus no need for suffix
-  full_join(just_stat1a, by = c("PX_ID", "unique_date", "unique_event")) %>%
+  full_join(just_stat1a_1b, by = c("PX_ID", "unique_date", "unique_event")) %>%
 
   # combines events if events happened on the same day
   group_by(PX_ID, unique_date) %>%
@@ -926,6 +991,17 @@ full_list <- full_list %>%
   group_by(PX_ID, unique_date) %>%
   fill(WL_ORG:CANHX_DEV_VENT_ARRYTHM, .direction = "downup") %>%
   distinct() %>%
+
+  mutate(
+    systolicBP = coalesce(systolicBP, CANHX_HEMO_SBP),
+    PCWP = coalesce(PCWP, CANHX_HEMO_PCWP),
+    mean_arterial_pressure = coalesce(mean_arterial_pressure, CANHX_HEMO_MAP),
+    central_venous_pressure = coalesce(central_venous_pressure, CANHX_HEMO_CVP),
+    cardiac_index = coalesce(cardiac_index, CANHX_HEMO_CI),
+    AST = coalesce(AST, CANHX_LAB_SGOT),
+    dobutamine_dose = coalesce(dobutamine_dose, CANHX_INTRP_DOBU),
+    milrinone_dose = coalesce(milrinone_dose, CANHX_INTRP_MILRIN),
+    dopamine_dose = coalesce(dopamine_dose, CANHX_INTRP_DOPA)) %>%
 
   # arranges dataset for easy viewing
   arrange(PX_ID, unique_date) %>%
@@ -1022,7 +1098,7 @@ full_list_final <- full_list %>%
       
       # risk_strat_data_hr variables
       grepl("CPTestDt", unique_event) |
-      grepl("SenDataDt", unique_event) |
+      # grepl("SenDataDt", unique_event) |
       grepl("HemoDt", unique_event) |
       grepl("VadLdhLevelsDt", unique_event) |
       grepl("VadPlasmaFreeHemoDt", unique_event) |
@@ -1055,7 +1131,6 @@ full_list_final <- full_list %>%
       grepl("CANHX_MED_UPDATE_DT", unique_event))
   
 ```
-
 
 # 10. Calculating number of days between each observation in full_list, by PX_ID
 
@@ -1096,36 +1171,3 @@ filename <-  paste0("full_list_final_", today(), ".RData")
 save(full_list_final, file = filename)
 
 ```
-
-# Scratch work used to make figure for poster on 6/1/2022
-
-```{r}
-
-var_label(example_list) <- list(HemoSbp = "Systolic blood pressure",
-                                      HemoDbp = "Diastolic blood pressure",
-                                      HemoPasp = "Pulmonary Artery\nSystolic blood pressure",
-                                      HemoMeanPressure = "Mean pulmonary artery pressure",
-                                      HemoPadp = "Pulmonary Artery Diastolic BP")
-
-example_list_pivot <- example_list %>% filter(PX_ID == 1248356) %>% select(-HemoCvp, -HemoPcwp) %>% pivot_longer(-(PX_ID:status_description), names_to = "variable", values_to = "pressure", values_drop_na = TRUE)
-
-poster_figure <- ggplot(data = example_list_pivot, aes(x = unique_date, y = pressure)) +
-  geom_line(aes(color = variable), size = 1) +
-  geom_label(data = example_list_pivot %>% 
-               filter(pressure > 88), aes(label = factor(status_description)), nudge_y = 5, alpha = 0.5, size = 8) +
-  labs(
-    x = "Date of measurement",
-    y = "Pressure (mm Hg)",
-    color = "Hemodynamic Measurement") +
-  scale_color_discrete(breaks = c("HemoSbp", "HemoDbp", "HemoPasp", "HemoMeanPressure", "HemoPadp"),
-                       labels = c("Systolic blood pressure", "Diastolic blood pressure",
-                                  "Pulmonary artery\nsystolic blood pressure",
-                                  "Mean pulmonary artery pressure",
-                                  "Pulmonary artery\ndiastolic blood pressure")) +
-  scale_x_datetime(date_breaks = "2 days", date_labels = "%B %d", expand = expansion(mult = 0.1)) +
-  theme(legend.text=element_text(size=20), legend.title = element_text(size=24),
-        axis.title = element_text(size=24), axis.text = element_text(size=24))
-
-poster_figure
-```
-
