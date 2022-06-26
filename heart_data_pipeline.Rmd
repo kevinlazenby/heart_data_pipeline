@@ -1229,11 +1229,9 @@ for (i in 2:nrow(final_list)) {
 final_list <- final_list %>% 
   relocate(t_start, t_stop, .after = unique_date)
 
-rdata_filename <-  paste0("final_list_", curr_data_release, "_", 
-                    today(), ".RData")
+rdata_filename <-  paste0("final_list_", curr_data_release, ".RData")
 
-csv_filename <-  paste0("final_list_", curr_data_release, "_", 
-                    today(), ".csv")
+csv_filename <-  paste0("final_list_", curr_data_release, ".csv")
 
 save(final_list, file = rdata_filename)
 write_csv(final_list, file = csv_filename)
