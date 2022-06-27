@@ -40,6 +40,7 @@ here::i_am("heart_data_pipeline.Rmd")
 # 1. Import data sets from SRTR
 
 ```{r load data}
+start_time <- Sys.time()
 
 # change this variable to load in a different release of the SAF
 curr_data_release <- "pubsaf2206"
@@ -1279,4 +1280,7 @@ csv_filename <-  paste0("full_list_", curr_data_release, ".csv")
 
 save(full_list, file = rdata_filename)
 write_csv(full_list, file = csv_filename)
+
+end_time <- Sys.time()
+end_time - start_time
 ```
