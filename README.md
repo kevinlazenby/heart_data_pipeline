@@ -58,8 +58,22 @@ This code chunk performs the same sequence of operations as in code chunk #4, ex
 3. The variable `status_criteria` combines information from many indicator variables and contains the criteria for each candidate to be listed at their assigned status.
 
 ## Code chunk #7: Pivot old policy justification forms by date, then join with full_list
-This code chunk performs the same sequence of operations as in code chunk #4, except with the data sets storing justification forms from the old policy era. The same three data wrangling steps from code chunk #6 are also applied to the old policy justification forms in this code chunk. Additionally, 
+This code chunk performs the same sequence of operations as in code chunk #4, except with the data sets storing justification forms from the old policy era. The same three data wrangling steps from code chunk #6 are also applied to the old policy justification forms in this code chunk. Additionally, using the tidyr function `fill`, missing data are filled using the *last observation carried forward* method. This method replaces missing values with the most recent non-missing value from the given candidate/recipient's record. The only exceptions to this method are the variables from `cand_thor` and `tx_hr`. These variables are filled "down and up", meaning that every row with a missing value is filled with a non-missing value, regardless of whether the non-missing value was recorded earlier in time. Variables from `cand_thor` and `tx_hr` are not time-varying, which makes filling "down and up" a safe method for these variables.
 
 ## Code chunk #8: Method to filter full_list to exclude unwanted timepoints
+This code chunk provides a method to filter the `full_list` data set to only include the unique dates that the user desires. This code chunk relies on the function `grepl`, and an example code snippet is provided below:
+```
+ # cand_thor variables
+    grepl("CAN_LISTING_DT", unique_event) |
+      grepl("PERS_OPTN_DEATH_DT", unique_event) |
+      grepl("PERS_SSA_DEATH_DT", unique_event) |
+      grepl("CAN_REM_DT", unique_event) |
+```
+The function `grepl` compares the provided string to a given variable and returns rows where a match is found. Therefore, if the user wants to include rows corresponding to candidates' listing date, for example, they should uncomment the line containing `CAN_LISTING_DT`. However, if the user does not want to include, e.g., candidates' date of removal from the waitlist, they should comment out the line containing `CAN_REM_DT`. Of note, to include rows that correspond to changes in candidates' status on the waitlist, the line below should remain uncommented.
+```
+# stathist_thor variables
+      grepl("CANHX_BEGIN_DT", unique_event) |
+```
 
 ## Code chunk #9: Calculating number of days between each observation in full_list and final_list, by PX_ID
+This code chunk contains a for loop that calculates the number of days that elapse between successive rows for each candidate/recipient. Unfortunately, the run time of this for loop is long for large input datasets. The total run time for the full script for all candidates listed on or after Jan. 1, 2010, is about 1 hour using the Windows machine in the HEAL lab. This code chunk also saves the final output dataset as an `.RData` file and a `.csv` file.
