@@ -38,6 +38,8 @@ here::i_am("heart_data_pipeline.Rmd")
 ```
 
 # 1. Import data sets from SRTR
+#       Only run this chunk if an .RData file with raw heart data does not exist
+#       i.e. Run this chunk after new release of SAF, but not thereafter
 
 ```{r load data}
 start_time <- Sys.time()
@@ -103,7 +105,31 @@ column_descriptions <-
 table_descriptions <- 
   read_sas(here(curr_data_release, "TableDescriptions.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
+
+raw_data_filename <- "pubsaf2303_raw_heart_data.RData"
+
+save(cand_thor, column_descriptions, just_form_hr, just_form_hr_data_link,
+     just_form_hr_stat1, just_form_hr_stat2, just_form_hr_stat3,
+     just_form_hr_stat4, risk_strat_data_hr, stat_just_hr1a, stat_just_hr1b,
+     stathist_thor, status_just_episode, table_descriptions, 
+     thor_support_device, tx_hr, 
+     file = here(curr_data_release, raw_data_filename))
 ```
+
+# 1.5. Load raw data from .RData file
+
+```{r load from RData file}
+
+start_time <- Sys.time()
+
+# change this variable to load in a different release of the SAF
+curr_data_release <- "pubsaf2303"
+
+raw_data_filename <- "pubsaf2303_raw_heart_data.RData"
+
+load(here(curr_data_release, raw_data_filename))
+```
+
 
 # 2. Link data sets using JustId, WlregAuditId, and PX_ID
 
