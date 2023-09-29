@@ -198,7 +198,7 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 ```
 
 # 3. Tidy input datasets
-#     a. Filter out candidates listed before filter date
+#     a. Filter out candidates listed before and after filter dates
 #     b. Filter out pediatric transplant candidates
 #     c. Filter out lung-only transplant candidates
 
