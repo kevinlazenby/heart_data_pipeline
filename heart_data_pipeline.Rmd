@@ -864,6 +864,10 @@ just_stat1a_1b <- just_stat1a_1b %>%
            pmax(CANHX_REQUIRE_LOW_INOTROP, CANHX_CONT_IV_INOTROP)) %>%
   
   arrange(CANHX_CHG_DT) %>% 
+  
+  # RowNumber is the equivalent of JustId
+  # there is no JustId variable for pre-policy justification forms,
+  # so RowNumber serves that purpose
   mutate(RowNumber = row_number()) %>% 
   
   select(RowNumber, PX_ID, CANHX_STAT_CD, 
@@ -1004,7 +1008,6 @@ just_stat1a_1b <- just_stat1a_1b %>%
   pivot_wider(names_from = variable,
               values_from = value) %>% 
  
-  select(-RowNumber) %>% 
   mutate(CANHX_STAT_CD = as.integer(CANHX_STAT_CD)) %>% 
   arrange(PX_ID, unique_date)
 
@@ -1013,14 +1016,16 @@ full_list <- full_list %>%
   # full join by common variables, thus no need for suffix
   full_join(just_stat1a_1b, by = c("PX_ID", "unique_date", "unique_event", 
                                    "CANHX_STAT_CD", "date_changed")) %>%
+  
+  relocate(RowNumber, .after = JustId) %>% 
 
   # combines events if events happened on the same day
   group_by(PX_ID, unique_date) %>%
   mutate(unique_event = str_c(unique_event, collapse = ",")) %>%
 
   # removes redundant rows after combining events above
-  # group_by(PX_ID, unique_date) %>%
-  # fill(everything(), .direction = "downup") %>%
+  group_by(PX_ID, unique_date) %>%
+  fill(everything(), .direction = "downup") %>%
   distinct(PX_ID, unique_date, unique_event, .keep_all = TRUE) %>%
 
   mutate(
@@ -1058,7 +1063,9 @@ full_list <- full_list %>%
   relocate(systolicBP, PCWP, mean_arterial_pressure, central_venous_pressure, 
          SVO2, cardiac_output, cardiac_index, arterial_lactate, AST, ALT,
          creatinine, bilirubin, albumin, sodium, BNP, resting_HR, diastolicBP, 
-         PASP, PADP, MPAP,
+         PASP, PADP, MPAP, HemoLvedp, HemoHemoglobin, CPTestMvo2, CPTestRer,
+         CPTestVeVco2, VadLdhLevels, VadPlasmaFreeHemo, HrSevFailBun,
+         HrSevFailInr,
          .after = unique_date) %>% 
   
   relocate(dobutamine_dose, milrinone_dose, dopamine_dose, epinephrine_dose,
@@ -1068,10 +1075,10 @@ full_list <- full_list %>%
   # necessary for filling steps below
   arrange(PX_ID, unique_date) %>%
 
-  # fill all variables "down" to show change over time
+  # fill variables "down" to show change over time
   # this fills in missing values using the na.locf() method
   group_by(PX_ID) %>%
-  fill(PX_ID:last_col(offset = 5), .direction = "down") %>%
+  fill(systolicBP:CANHX_STAT_CD, .direction = "down") %>%
   ungroup() %>%
 
   arrange(PX_ID, unique_date) %>%
@@ -1079,6 +1086,29 @@ full_list <- full_list %>%
   # fill cand_thor and tx_hr variables "downup" because these variables are static
   group_by(PX_ID) %>%
   fill(WL_ORG:REC_MM_EQUIV_TX, .direction = "downup") %>%
+  ungroup() %>%
+
+  arrange(PX_ID, unique_date) %>%
+
+  # fill variables "down" to show change over time
+  # this fills in missing values using the na.locf() method
+  group_by(PX_ID, JustId) %>%
+  fill(status_criteria:ExtInotropeDopamine, .direction = "down") %>%
+  ungroup() %>%
+
+  arrange(PX_ID, unique_date) %>%
+
+  # fill variables "down" to show change over time
+  # this fills in missing values using the na.locf() method
+  group_by(PX_ID, RowNumber) %>%
+  fill(CANHX_STAT_TY:CANHX_ECMO, .direction = "down") %>%
+  ungroup() %>%
+
+  arrange(PX_ID, unique_date) %>%
+
+  # fill variables "downup" by JustId group to fill all rows from that form
+  group_by(PX_ID, JustId, RowNumber) %>%
+  fill(dobutamine_dose:epinephrine_dose, .direction = "downup") %>%
   ungroup() %>%
 
   # arranges dataset for easy viewing
