@@ -30,7 +30,7 @@ library(ggpubr)
 library(here)
 library(readr)
 library(lubridate)
-library(boxr)
+# library(boxr)
 library(zoo)
 library(labelled)
 
@@ -43,7 +43,7 @@ here::i_am("heart_data_pipeline.Rmd")
 start_time <- Sys.time()
 
 # change this variable to load in a different release of the SAF
-curr_data_release <- "pubsaf2206"
+curr_data_release <- "pubsaf2303"
 
 cand_thor <- read_sas(here(curr_data_release, "cand_thor.sas7bdat"), NULL) %>%  
   zap_formats() %>% zap_labels()
@@ -130,8 +130,8 @@ risk_strat_data_hr <- risk_strat_data_hr %>%
   select(-(ends_with("St"))) %>% 
   select(-(starts_with("CandHist"))) %>%
   select(-(starts_with("SenData"))) %>%
-  select(-(starts_with("CurrTher"))) %>%
-  select(-(ends_with("Type"))) %>%
+  # select(-(starts_with("CurrTher"))) %>%
+  # select(-(ends_with("Type"))) %>%
   select(-(ends_with("Perf"))) %>%
   relocate(ChangeDt:PX_ID)
 
@@ -205,15 +205,25 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 ```{r apply exclusion criteria}
 
 # change these variables to customize inclusion criteria
-filter_date <- mdy("01/01/2010")
+filter_date_start <- mdy("10-18-2018")
+filter_date_end <- mdy("03-01-2022")
 include_multi_organ_recipients <- TRUE
 missingness_threshold <- 1
 
 # filter candidates based on inclusion/exclusion criteria 
 cand_list <- cand_thor %>% 
-  filter(CAN_LISTING_DT >= filter_date) %>% 
+  
+  # Remove recipients listed prior to policy change
+  filter(CAN_LISTING_DT >= filter_date_start) %>%
+  
+  # Remove recipients transplanted after March 1, 2022 (insufficient follow-up)
+  filter(REC_TX_DT <= filter_date_end) %>% 
+  
+  # Remove lung-only recipients
   filter(WL_ORG != "LU") %>% 
-  filter(CAN_AGE_AT_LISTING > 17)
+  
+  # Remove recipients who were < 18 yrs old at listing
+  filter((CAN_AGE_IN_MONTHS_AT_LISTING / 12) >= 18)
 
 if (include_multi_organ_recipients == FALSE) {
   multi_organ_recipients <- tx_hr %>% 
