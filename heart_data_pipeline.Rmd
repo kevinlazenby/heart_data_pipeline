@@ -1201,7 +1201,7 @@ full_list <- full_list %>%
 
 # comment out lines below to exclude those timepoints from the dataset
 # currently, dates are commented out except for listing, transplant, death, 
-# last follow-up, and status changes
+# last follow-up, status changes, and dates from risk stratification data
 
 final_list <- full_list %>% 
   
@@ -1360,8 +1360,8 @@ rdata_filename <-  paste0("cont_time_series_", curr_data_release, ".RData")
 
 csv_filename <-  paste0("cont_time_series_", curr_data_release, ".csv")
 
-save(final_list, file = rdata_filename)
-write_csv(final_list, file = csv_filename)
+save(final_list, file = here(curr_data_release, rdata_filename))
+write_csv(final_list, file = here(curr_data_release, csv_filename))
 
 # repeat process for full_list
 # full_list <- full_list %>%
