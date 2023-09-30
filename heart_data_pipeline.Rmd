@@ -1201,7 +1201,7 @@ full_list <- full_list %>%
 
 # comment out lines below to exclude those timepoints from the dataset
 # currently, dates are commented out except for listing, transplant, death, 
-# last follow-up, status changes, and dates from risk stratification data
+# last follow-up, and status changes
 
 final_list <- full_list %>% 
   
@@ -1222,7 +1222,7 @@ final_list <- full_list %>%
       # grepl("REC_DISCHRG_DT", unique_event) |
       # grepl("TFL_GRAFT_DT", unique_event) |
       grepl("TFL_DEATH_DT", unique_event) |
-      grepl("TFL_LAST_FU_DT", unique_event) |
+      grepl("TFL_LAST_FU_DT", unique_event))
       
       # # just_form_hr variables
       # grepl("ChangeDt", unique_event) |
@@ -1287,20 +1287,20 @@ final_list <- full_list %>%
       # grepl("InotropePcwpDt", unique_event) |
       # 
       # # risk_strat_data_hr variables
-      grepl("CPTestDt", unique_event) |
-      grepl("SenDataDt", unique_event) |
-      grepl("HemoDt", unique_event) |
-      grepl("VadLdhLevelsDt", unique_event) |
-      grepl("VadPlasmaFreeHemoDt", unique_event) |
-      grepl("HrSevFailSodiumDt", unique_event) |
-      grepl("HrSevFailCreatinineDt", unique_event) |
-      grepl("HrSevFailBunDt", unique_event) |
-      grepl("HrSevFailAlbuminDt", unique_event) |
-      grepl("HrSevFailAsparTransDt", unique_event) |
-      grepl("HrSevFailBilirubinDt", unique_event) |
-      grepl("HrSevFailArterialLactDt", unique_event) |
-      grepl("HrSevFailInrDt", unique_event) |
-      grepl("HrSevFailBnpDt", unique_event))
+      # grepl("CPTestDt", unique_event) |
+      # grepl("SenDataDt", unique_event) |
+      # grepl("HemoDt", unique_event) |
+      # grepl("VadLdhLevelsDt", unique_event) |
+      # grepl("VadPlasmaFreeHemoDt", unique_event) |
+      # grepl("HrSevFailSodiumDt", unique_event) |
+      # grepl("HrSevFailCreatinineDt", unique_event) |
+      # grepl("HrSevFailBunDt", unique_event) |
+      # grepl("HrSevFailAlbuminDt", unique_event) |
+      # grepl("HrSevFailAsparTransDt", unique_event) |
+      # grepl("HrSevFailBilirubinDt", unique_event) |
+      # grepl("HrSevFailArterialLactDt", unique_event) |
+      # grepl("HrSevFailInrDt", unique_event) |
+      # grepl("HrSevFailBnpDt", unique_event) |
       # 
       # # stat_just_hr1a and stat_just_hr1b variables
       # grepl("CANHX_CHG_DT", unique_event) |
