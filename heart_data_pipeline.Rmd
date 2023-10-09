@@ -512,6 +512,8 @@ just_stat4 <- just_stat4 %>%
 risk_strat <- risk_strat %>%
   mutate(across(ends_with("Dt"), ~ floor_date(.x, unit = "day"))) %>%
   
+  mutate(HrSevFailNtBnpType = ifelse(HrSevFailNtBnpType == "", NA, HrSevFailNtBnpType)) %>% 
+  
   # adding just_form and just_stat1-4 columns to risk_strat
   full_join(just_form, by = c("ChangeDt", "JustId", "PX_ID")) %>%
   full_join(just_stat1, by = c("JustId", "PX_ID", "ChangeDt")) %>%
@@ -762,7 +764,7 @@ risk_strat <- risk_strat %>%
          HemoCardiacOutput, HemoHemoglobin, VadLdhLevels, VadPlasmaFreeHemo,
          VadHemoglobinuria, HrSevFailSodium, HrSevFailCreatinine,
          HrSevFailBun, HrSevFailAlbumin, HrSevFailBilirubin, HrSevFailInr,
-         HrSevFailInrAntiCoag, HrSevFailBnp, RequestedCandStatCd,
+         HrSevFailInrAntiCoag, HrSevFailBnp, HrSevFailNtBnpType, RequestedCandStatCd,
          ExtensionNumber, Exception, AdmittedToHospital, listing_description,
          
          # indicator variables from just_stat1-just_stat4
@@ -775,6 +777,7 @@ risk_strat <- risk_strat %>%
                          dobutamine_dose, milrinone_dose, dopamine_dose,
                          epinephrine_dose, HemoObtainedOnSupport, 
                          VadHemoglobinuria, HrSevFailInrAntiCoag,
+                         HrSevFailNtBnpType,
                          ExtensionNumber, Exception, AdmittedToHospital,
                          listing_description, 
                          any_of(just_form_indicator_variables)),
@@ -838,7 +841,8 @@ risk_strat <- risk_strat %>%
          HemoLvedp, HemoCardiacOutput, HemoHemoglobin, CPTestMvo2, CPTestRer,
          CPTestVeVco2, VadLdhLevels, VadPlasmaFreeHemo, HrSevFailSodium,
          HrSevFailCreatinine, HrSevFailBun, HrSevFailAlbumin, 
-         HrSevFailBilirubin, HrSevFailInr, HrSevFailBnp, RequestedCandStatCd,
+         HrSevFailBilirubin, HrSevFailInr, HrSevFailBnp, HrSevFailNtBnpType,
+         RequestedCandStatCd,
          .after = unique_event) %>% 
   mutate(RequestedCandStatCd = as.integer(RequestedCandStatCd))
 
@@ -1130,7 +1134,8 @@ full_list <- full_list %>%
   
   relocate(systolicBP, PCWP, mean_arterial_pressure, central_venous_pressure, 
            SVO2, cardiac_output, cardiac_index, arterial_lactate, AST, ALT,
-           creatinine, bilirubin, albumin, sodium, BNP, resting_HR, diastolicBP, 
+           creatinine, bilirubin, albumin, sodium, BNP, HrSevFailNtBnpType,
+           resting_HR, diastolicBP, 
            PASP, PADP, MPAP, HemoLvedp, HemoHemoglobin, CPTestMvo2, CPTestRer,
            CPTestVeVco2, VadLdhLevels, VadPlasmaFreeHemo, HrSevFailBun,
            HrSevFailInr,
