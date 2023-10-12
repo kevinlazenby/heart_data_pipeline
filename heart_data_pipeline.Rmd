@@ -30,7 +30,6 @@ library(ggpubr)
 library(here)
 library(readr)
 library(lubridate)
-# library(boxr)
 library(zoo)
 library(labelled)
 
@@ -40,17 +39,17 @@ RData_file_loaded <- TRUE
 ```
 
 # 1. Import data sets from SRTR
-#    If logical value above is set appropriately, this chunk only runs if an
-#    RData file of raw heart data does not exist (i.e. when the lab receives
-#    a new release of the SAF from SRTR)
+#    If logical value above is set appropriately, this chunk either loads data from
+#    source files (i.e. when the lab receives
+#    a new release of the SAF from SRTR) or from a saved .RData file
 
 ```{r load data}
 
+# change this variable to load in a different release of the SAF
+curr_data_release <- "pubsaf2309"
+
 if (RData_file_loaded == FALSE) {
   start_time <- Sys.time()
-  
-  # change this variable to load in a different release of the SAF
-  curr_data_release <- "pubsaf2303"
   
   cand_thor <- read_sas(here(curr_data_release, "cand_thor.sas7bdat"), NULL) %>%  
     zap_formats() %>% zap_labels()
@@ -111,7 +110,7 @@ if (RData_file_loaded == FALSE) {
     read_sas(here(curr_data_release, "TableDescriptions.sas7bdat"), NULL) %>%  
     zap_formats() %>% zap_labels()
   
-  raw_data_filename <- "pubsaf2303_raw_heart_data.RData"
+  raw_data_filename <- "pubsaf2309_raw_heart_data.RData"
   
   save(cand_thor, column_descriptions, just_form_hr, just_form_hr_data_link,
        just_form_hr_stat1, just_form_hr_stat2, just_form_hr_stat3,
@@ -119,22 +118,14 @@ if (RData_file_loaded == FALSE) {
        stathist_thor, status_just_episode, table_descriptions, 
        thor_support_device, tx_hr, 
        file = here(curr_data_release, raw_data_filename))
+} else {
+  start_time <- Sys.time()
+
+  raw_data_filename <- "pubsaf2309_raw_heart_data.RData"
+
+  load(here(curr_data_release, raw_data_filename))  
 }
 
-```
-
-# 1.5. Load raw data from .RData file
-
-```{r load from RData file}
-
-start_time <- Sys.time()
-
-# change this variable to load in a different release of the SAF
-curr_data_release <- "pubsaf2303"
-
-raw_data_filename <- "pubsaf2303_raw_heart_data.RData"
-
-load(here(curr_data_release, raw_data_filename))
 ```
 
 # 2. Link data sets using JustId, WlregAuditId, and PX_ID
@@ -238,7 +229,7 @@ just_form_hr_stat4 <- just_form_hr_stat4 %>%
 
 # change these variables to customize inclusion criteria
 filter_date_start <- mdy("10-18-2018")
-filter_date_end <- mdy("03-01-2022")
+filter_date_end <- mdy("09-01-2022")
 include_multi_organ_recipients <- TRUE
 
 # See code chunk #7 if using pre-policy data
@@ -251,7 +242,7 @@ cand_list <- cand_thor %>%
   # Remove recipients listed prior to policy change
   filter(CAN_LISTING_DT >= filter_date_start) %>%
   
-  # Remove recipients transplanted after March 1, 2022 (insufficient follow-up)
+  # Remove recipients transplanted after September 1, 2022 (insufficient follow-up)
   filter(REC_TX_DT <= filter_date_end) %>% 
   
   # Remove heart-lung and lung-only recipients
@@ -1115,13 +1106,17 @@ if (include_pre_policy == TRUE) {
       diastolicBP = HemoDbp,
       PASP = HemoPasp,
       PADP = HemoPadp,
-      MPAP = HemoMeanPressure)
+      MPAP = HemoMeanPressure,
+      BUN = HrSevFailBun,
+      INR = HrSevFailInr,
+      LDH = VadLdhLevels)
 }
 
 vars_to_remove <- c("CANHX_HEMO_SBP", "CANHX_HEMO_PCWP", "CANHX_HEMO_MAP", "CANHX_HEMO_CVP",
          "CANHX_HEMO_CI", "CANHX_LAB_SGOT", "CANHX_INTRP_DOBU",
          "CANHX_INTRP_MILRIN", "CANHX_INTRP_DOPA", "CANHX_LAB_SERUM_CREAT",
          "HrSevFailCreatinine", "CANHX_LAB_BILI", "HrSevFailBilirubin",
+         "HrSevFailBun", "HrSevFailInr", "VadLdhLevels",
          "CANHX_LAB_ALBUMIN", "HrSevFailAlbumin", "CANHX_LAB_SODIUM",
          "HrSevFailSodium", "CANHX_LAB_BNP", "HrSevFailBnp", "CANHX_CARD_OUTPUT",
          "HemoCardiacOutput", "CANHX_HEMO_REST_HR_RATE", "HemoRestingHeartRate",
@@ -1137,8 +1132,8 @@ full_list <- full_list %>%
            creatinine, bilirubin, albumin, sodium, BNP, HrSevFailNtBnpType,
            resting_HR, diastolicBP, 
            PASP, PADP, MPAP, HemoLvedp, HemoHemoglobin, CPTestMvo2, CPTestRer,
-           CPTestVeVco2, VadLdhLevels, VadPlasmaFreeHemo, HrSevFailBun,
-           HrSevFailInr,
+           CPTestVeVco2, LDH, VadPlasmaFreeHemo, BUN,
+           INR,
            .after = unique_date) %>% 
   
   relocate(dobutamine_dose, milrinone_dose, dopamine_dose, epinephrine_dose,
